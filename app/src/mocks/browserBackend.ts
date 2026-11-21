@@ -446,6 +446,145 @@ flowchart LR
       case 'vault_update_links_on_rename':
         return 1;
 
+      case 'vault_search': {
+        const q = (args.query || '').trim();
+        const opts = args.options || {};
+        const isCase = opts.case_sensitive || false;
+        const isRegex = opts.regex || false;
+        const isMoreContext = opts.more_context || false;
+
+        const results: any[] = [];
+        let totalMatches = 0;
+
+        filesMap.forEach((content, filePath) => {
+          if (!filePath.endsWith('.md')) return;
+          const fileTitle = filePath.replace(/\.md$/, '').split('/').pop() || filePath;
+          const lines = content.split('\n');
+          const matches: any[] = [];
+
+          let re: RegExp | null = null;
+          if (isRegex) {
+            try {
+              re = new RegExp(q, isCase ? 'g' : 'gi');
+            } catch {}
+          }
+
+          lines.forEach((line, idx) => {
+            let found = false;
+            let start = 0;
+            let end = 0;
+
+            if (re) {
+              const m = re.exec(line);
+              if (m) {
+                found = true;
+                start = m.index;
+                end = start + m[0].length;
+              }
+            } else if (q.startsWith('tag:')) {
+              const targetTag = q.slice(4).trim();
+              if (line.toLowerCase().includes(targetTag.toLowerCase())) {
+                found = true;
+                start = line.toLowerCase().indexOf(targetTag.toLowerCase());
+                end = start + targetTag.length;
+              }
+            } else if (q.startsWith('path:')) {
+              const targetPath = q.slice(5).trim();
+              if (filePath.toLowerCase().includes(targetPath.toLowerCase())) {
+                found = true;
+              }
+            } else {
+              const checkLine = isCase ? line : line.toLowerCase();
+              const checkQ = isCase ? q : q.toLowerCase();
+              const pos = checkLine.indexOf(checkQ);
+              if (pos !== -1) {
+                found = true;
+                start = pos;
+                end = pos + q.length;
+              }
+            }
+
+            if (found) {
+              const before_context = isMoreContext
+                ? lines.slice(Math.max(0, idx - 2), idx)
+                : [];
+              const after_context = isMoreContext
+                ? lines.slice(idx + 1, idx + 3)
+                : [];
+
+              matches.push({
+                line_number: idx + 1,
+                line_text: line,
+                match_start: start,
+                match_end: end,
+                before_context,
+                after_context,
+              });
+            }
+          });
+
+          if (matches.length > 0) {
+            totalMatches += matches.length;
+            results.push({
+              file_path: filePath,
+              file_title: fileTitle,
+              modified_at: Math.floor(Date.now() / 1000),
+              matches,
+              total_matches: matches.length,
+            });
+          }
+        });
+
+        return {
+          results,
+          total_files: results.length,
+          total_matches: totalMatches,
+          duration_ms: 1.5,
+        };
+      }
+
+      case 'vault_preview_global_replace': {
+        const req = args.request;
+        const previews: any[] = [];
+        filesMap.forEach((content, path) => {
+          if (!path.endsWith('.md')) return;
+          const lines = content.split('\n');
+          lines.forEach((line, idx) => {
+            if (line.toLowerCase().includes(req.search_query.toLowerCase())) {
+              previews.push({
+                file_path: path,
+                line_number: idx + 1,
+                original_line: line,
+                replaced_line: line.replace(new RegExp(req.search_query, 'gi'), req.replacement),
+              });
+            }
+          });
+        });
+        return previews;
+      }
+
+      case 'vault_execute_global_replace': {
+        const req = args.request;
+        let modified = 0;
+        let occurrences = 0;
+        filesMap.forEach((content, path) => {
+          if (!path.endsWith('.md')) return;
+          if (lineContains(content, req.search_query)) {
+            const updated = content.replace(new RegExp(req.search_query, 'gi'), req.replacement);
+            filesMap.set(path, updated);
+            modified++;
+            occurrences++;
+          }
+        });
+        function lineContains(text: string, q: string) {
+          return text.toLowerCase().includes(q.toLowerCase());
+        }
+        return {
+          files_modified: modified,
+          occurrences_replaced: occurrences,
+        };
+      }
+
       default:
         console.warn('[Mock IPC] Unhandled command:', cmd, args);
         return null;

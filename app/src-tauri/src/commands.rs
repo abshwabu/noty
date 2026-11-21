@@ -1,5 +1,8 @@
 use crate::vault::db::{BacklinksResult, GraphData, HeadingItem, OutgoingLinkItem, TagCountItem};
-use crate::vault::{FileNode, RecentVault, TrashItem, VaultInfo, VaultManager};
+use crate::vault::{
+    FileNode, GlobalReplaceRequest, GlobalReplaceResult, RecentVault, ReplacePreviewItem,
+    SearchOptions, SearchResponse, TrashItem, VaultInfo, VaultManager,
+};
 use crate::watcher::VaultWatcherController;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -338,4 +341,30 @@ pub async fn vault_update_links_on_rename(
     state: State<'_, AppState>,
 ) -> Result<usize, String> {
     state.vault_manager.update_links_on_rename(&old_path, &new_path)
+}
+
+#[tauri::command]
+pub async fn vault_search(
+    query: String,
+    options: Option<SearchOptions>,
+    state: State<'_, AppState>,
+) -> Result<SearchResponse, String> {
+    let opts = options.unwrap_or_default();
+    state.vault_manager.search(&query, &opts)
+}
+
+#[tauri::command]
+pub async fn vault_preview_global_replace(
+    request: GlobalReplaceRequest,
+    state: State<'_, AppState>,
+) -> Result<Vec<ReplacePreviewItem>, String> {
+    state.vault_manager.preview_global_replace(&request)
+}
+
+#[tauri::command]
+pub async fn vault_execute_global_replace(
+    request: GlobalReplaceRequest,
+    state: State<'_, AppState>,
+) -> Result<GlobalReplaceResult, String> {
+    state.vault_manager.execute_global_replace(&request)
 }

@@ -162,6 +162,13 @@ impl MetadataIndex {
                 line_number INTEGER NOT NULL
             );
 
+            CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+                path,
+                title,
+                content,
+                tokenize='unicode61'
+            );
+
             CREATE INDEX IF NOT EXISTS idx_links_source ON links(source_path);
             CREATE INDEX IF NOT EXISTS idx_links_target ON links(target_note);
             CREATE INDEX IF NOT EXISTS idx_tags_file ON tags(file_path);
@@ -201,12 +208,23 @@ impl MetadataIndex {
             .map_err(|e| e.to_string())?;
         tx.execute("DELETE FROM tasks WHERE file_path = ?1", params![relative_path])
             .map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM notes_fts WHERE path = ?1", params![relative_path])
+            .map_err(|e| e.to_string())?;
 
         tx.execute(
             "INSERT INTO files (path, mtime) VALUES (?1, ?2)",
             params![relative_path, mtime],
         )
         .map_err(|e| e.to_string())?;
+
+        let title = Path::new(relative_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(relative_path);
+        let _ = tx.execute(
+            "INSERT INTO notes_fts (path, title, content) VALUES (?1, ?2, ?3)",
+            params![relative_path, title, content],
+        );
 
         // 1. Parse YAML Frontmatter
         let lines: Vec<&str> = content.lines().collect();
@@ -342,6 +360,8 @@ impl MetadataIndex {
         conn.execute("DELETE FROM properties WHERE file_path = ?1", params![relative_path])
             .map_err(|e| e.to_string())?;
         conn.execute("DELETE FROM tasks WHERE file_path = ?1", params![relative_path])
+            .map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM notes_fts WHERE path = ?1", params![relative_path])
             .map_err(|e| e.to_string())?;
         Ok(())
     }
@@ -680,6 +700,16 @@ impl MetadataIndex {
         }
 
         Ok(GraphData { nodes, edges })
+    }
+
+    pub fn search(
+        &self,
+        vault_path: &Path,
+        raw_query: &str,
+        options: &crate::search::SearchOptions,
+    ) -> Result<crate::search::SearchResponse, String> {
+        let conn = self.get_connection()?;
+        crate::search::execute_search(&conn, vault_path, raw_query, options)
     }
 
     fn get_line_snippet(&self, vault_path: &Path, rel_path: &str, line_num: usize) -> String {

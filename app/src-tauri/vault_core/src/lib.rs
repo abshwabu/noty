@@ -7,7 +7,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub mod db;
+pub mod search;
 use db::{BacklinksResult, GraphData, HeadingItem, MetadataIndex, OutgoingLinkItem, TagCountItem};
+pub use search::{
+    FileSearchResult, GlobalReplaceRequest, GlobalReplaceResult, ReplacePreviewItem,
+    SearchMatchItem, SearchOptions, SearchResponse,
+};
 
 pub const APP_CONFIG_DIR_NAME: &str = ".noty";
 pub const TRASH_DIR_NAME: &str = ".trash";
@@ -976,6 +981,71 @@ impl VaultManager {
         }
         Ok(())
     }
+
+    // --- Search & Global Replace ---
+
+    pub fn search(&self, raw_query: &str, options: &SearchOptions) -> Result<SearchResponse, String> {
+        let vault_path = self.get_current_vault_path()?;
+        let lock = self.index.lock().map_err(|e| e.to_string())?;
+        let index = lock.as_ref().ok_or_else(|| "Metadata index not initialized".to_string())?;
+        index.search(&vault_path, raw_query, options)
+    }
+
+    pub fn preview_global_replace(&self, request: &GlobalReplaceRequest) -> Result<Vec<ReplacePreviewItem>, String> {
+        let vault_path = self.get_current_vault_path()?;
+        search::preview_global_replace(&vault_path, request)
+    }
+
+    pub fn execute_global_replace(&self, request: &GlobalReplaceRequest) -> Result<GlobalReplaceResult, String> {
+        let previews = self.preview_global_replace(request)?;
+        let mut files_to_update: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for item in &previews {
+            files_to_update.insert(item.file_path.clone());
+        }
+
+        let regex_matcher = if request.regex {
+            Some(regex::Regex::new(&request.search_query).map_err(|e| format!("Invalid regex: {}", e))?)
+        } else {
+            None
+        };
+
+        let mut occurrences = 0;
+        let mut modified_count = 0;
+
+        for file_rel in files_to_update {
+            if let Ok(content) = self.read_file(&file_rel) {
+                let replaced = if let Some(ref re) = regex_matcher {
+                    let c = re.find_iter(&content).count();
+                    occurrences += c;
+                    re.replace_all(&content, request.replacement.as_str()).to_string()
+                } else if request.case_sensitive {
+                    let c = content.matches(&request.search_query).count();
+                    occurrences += c;
+                    content.replace(&request.search_query, &request.replacement)
+                } else {
+                    if let Ok(re_ci) = regex::Regex::new(&format!("(?i){}", regex::escape(&request.search_query))) {
+                        let c = re_ci.find_iter(&content).count();
+                        occurrences += c;
+                        re_ci.replace_all(&content, request.replacement.as_str()).to_string()
+                    } else {
+                        let c = content.to_lowercase().matches(&request.search_query.to_lowercase()).count();
+                        occurrences += c;
+                        content.replace(&request.search_query, &request.replacement)
+                    }
+                };
+
+                if replaced != content {
+                    self.write_file_atomic(&file_rel, &replaced)?;
+                    modified_count += 1;
+                }
+            }
+        }
+
+        Ok(GlobalReplaceResult {
+            files_modified: modified_count,
+            occurrences_replaced: occurrences,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -1237,5 +1307,78 @@ Link to [[Note B|Alias B]] and #subtag."#;
         let updated_a = manager.read_file("Note A.md").unwrap();
         assert!(updated_a.contains("[[Note Renamed|Alias B]]"));
         assert!(!updated_a.contains("[[Note B|Alias B]]"));
+    }
+
+    #[test]
+    fn test_search_operators_and_global_replace() {
+        let temp_dir = tempdir().unwrap();
+        let vault_dir = temp_dir.path().join("vault");
+        let recent_file = temp_dir.path().join("recents.json");
+
+        let manager = VaultManager::new(recent_file);
+        manager.set_current_vault(vault_dir.clone()).unwrap();
+
+        // Note 1: Project Plan
+        let doc1 = r#"---
+status: active
+tags: [project/app, tauri]
+---
+# Mobile Architecture
+Building an offline-first notes application with Rust and Vue 3.
+- [ ] Implement FTS5 search
+- [x] Implement canvas graph
+We need "blazing speed" for enterprise users."#;
+        manager.write_file_atomic("Work/Architecture.md", doc1).unwrap();
+
+        // Note 2: Meeting Notes
+        let doc2 = r#"# Weekly Meeting
+Discussing release dates and roadmap.
+- [ ] Review PRs
+Offline-first synchronization design."#;
+        manager.write_file_atomic("Meetings/Weekly.md", doc2).unwrap();
+
+        // 1. Search with tag: operator
+        let res_tag = manager.search("tag:project/app", &SearchOptions::default()).unwrap();
+        assert_eq!(res_tag.results.len(), 1);
+        assert_eq!(res_tag.results[0].file_path, "Work/Architecture.md");
+
+        // 2. Search with path: operator
+        let res_path = manager.search("path:Meetings", &SearchOptions::default()).unwrap();
+        assert_eq!(res_path.results.len(), 1);
+        assert_eq!(res_path.results[0].file_path, "Meetings/Weekly.md");
+
+        // 3. Search with task-todo: operator
+        let res_task = manager.search("task-todo:FTS5", &SearchOptions::default()).unwrap();
+        assert_eq!(res_task.results.len(), 1);
+        assert_eq!(res_task.results[0].file_path, "Work/Architecture.md");
+
+        // 4. Search with exact phrase
+        let res_phrase = manager.search("\"blazing speed\"", &SearchOptions::default()).unwrap();
+        assert_eq!(res_phrase.results.len(), 1);
+
+        // 5. Search with negation -path:Work
+        let res_neg = manager.search("Offline-first -path:Work", &SearchOptions::default()).unwrap();
+        assert_eq!(res_neg.results.len(), 1);
+        assert_eq!(res_neg.results[0].file_path, "Meetings/Weekly.md");
+
+        // 6. Test global replace preview and execution
+        let replace_req = GlobalReplaceRequest {
+            search_query: "Offline-first".to_string(),
+            replacement: "Local-first".to_string(),
+            case_sensitive: false,
+            regex: false,
+            target_paths: None,
+        };
+
+        let previews = manager.preview_global_replace(&replace_req).unwrap();
+        assert_eq!(previews.len(), 2);
+
+        let replace_res = manager.execute_global_replace(&replace_req).unwrap();
+        assert_eq!(replace_res.files_modified, 2);
+        assert_eq!(replace_res.occurrences_replaced, 2);
+
+        let updated_doc2 = manager.read_file("Meetings/Weekly.md").unwrap();
+        assert!(updated_doc2.contains("Local-first synchronization design."));
+        assert!(!updated_doc2.contains("Offline-first synchronization design."));
     }
 }

@@ -5,8 +5,10 @@ import { useVaultStore } from '../stores/vault';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useSettingsStore } from '../stores/settings';
 import type { EditorViewMode } from '../types/workspace';
-import { Compartment, EditorState } from '@codemirror/state';
+import { Compartment, EditorState, StateEffect, StateField, RangeSetBuilder } from '@codemirror/state';
 import {
+  Decoration,
+  type DecorationSet,
   EditorView,
   keymap,
   lineNumbers as cmLineNumbers,
@@ -32,6 +34,11 @@ import {
   Edit3,
   Code,
   Image as ImageIcon,
+  Search,
+  X,
+  Replace,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-vue-next';
 
 const props = defineProps<{
@@ -57,6 +64,197 @@ const lineNumbersCompartment = new Compartment();
 const vimCompartment = new Compartment();
 const livePreviewCompartment = new Compartment();
 const foldCompartment = new Compartment();
+
+const setSearchMatchesEffect = StateEffect.define<{
+  matches: { from: number; to: number }[];
+  activeIndex: number;
+}>();
+
+const searchHighlightField = StateField.define<DecorationSet>({
+  create() {
+    return Decoration.none;
+  },
+  update(deco, tr) {
+    for (const e of tr.effects) {
+      if (e.is(setSearchMatchesEffect)) {
+        if (!e.value.matches.length) {
+          return Decoration.none;
+        }
+        const builder = new RangeSetBuilder<Decoration>();
+        e.value.matches.forEach((m, idx) => {
+          if (idx === e.value.activeIndex) {
+            builder.add(
+              m.from,
+              m.to,
+              Decoration.mark({
+                class: 'cm-search-match cm-search-match-active bg-amber-400 text-black font-semibold rounded px-0.5',
+              })
+            );
+          } else {
+            builder.add(
+              m.from,
+              m.to,
+              Decoration.mark({
+                class: 'cm-search-match bg-amber-400/30 text-amber-200 rounded px-0.5',
+              })
+            );
+          }
+        });
+        return builder.finish();
+      }
+    }
+    return deco.map(tr.changes);
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+// In-note Find & Replace state
+const showFindBar = ref(false);
+const showReplaceRow = ref(false);
+const findQuery = ref('');
+const replaceQuery = ref('');
+const findCaseSensitive = ref(false);
+const findRegex = ref(false);
+const findWholeWord = ref(false);
+const matchRanges = ref<{ from: number; to: number }[]>([]);
+const activeMatchIndex = ref(0);
+const findInputRef = ref<HTMLInputElement | null>(null);
+
+function updateMatches() {
+  const q = findQuery.value;
+  if (!q || !editorView) {
+    matchRanges.value = [];
+    activeMatchIndex.value = 0;
+    if (editorView) {
+      editorView.dispatch({
+        effects: setSearchMatchesEffect.of({ matches: [], activeIndex: -1 }),
+      });
+    }
+    return;
+  }
+
+  const docText = editorView.state.doc.toString();
+  const ranges: { from: number; to: number }[] = [];
+
+  try {
+    let re: RegExp;
+    if (findRegex.value) {
+      re = new RegExp(q, findCaseSensitive.value ? 'g' : 'gi');
+    } else {
+      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = findWholeWord.value ? `\\b${escaped}\\b` : escaped;
+      re = new RegExp(pattern, findCaseSensitive.value ? 'g' : 'gi');
+    }
+
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(docText)) !== null) {
+      if (m[0].length === 0) {
+        re.lastIndex++;
+        continue;
+      }
+      ranges.push({
+        from: m.index,
+        to: m.index + m[0].length,
+      });
+    }
+  } catch {
+    // invalid regex
+  }
+
+  matchRanges.value = ranges;
+  if (ranges.length > 0) {
+    if (activeMatchIndex.value >= ranges.length) {
+      activeMatchIndex.value = 0;
+    }
+    highlightAndScrollActive();
+  } else {
+    activeMatchIndex.value = 0;
+    if (editorView) {
+      editorView.dispatch({
+        effects: setSearchMatchesEffect.of({ matches: [], activeIndex: -1 }),
+      });
+    }
+  }
+}
+
+function highlightAndScrollActive() {
+  if (!editorView || matchRanges.value.length === 0) return;
+  const current = matchRanges.value[activeMatchIndex.value];
+  if (!current) return;
+
+  editorView.dispatch({
+    effects: setSearchMatchesEffect.of({
+      matches: matchRanges.value,
+      activeIndex: activeMatchIndex.value,
+    }),
+    selection: { anchor: current.from, head: current.to },
+    scrollIntoView: true,
+  });
+}
+
+function nextMatch() {
+  if (matchRanges.value.length === 0) return;
+  activeMatchIndex.value = (activeMatchIndex.value + 1) % matchRanges.value.length;
+  highlightAndScrollActive();
+}
+
+function prevMatch() {
+  if (matchRanges.value.length === 0) return;
+  activeMatchIndex.value =
+    (activeMatchIndex.value - 1 + matchRanges.value.length) % matchRanges.value.length;
+  highlightAndScrollActive();
+}
+
+function replaceCurrent() {
+  if (!editorView || matchRanges.value.length === 0) return;
+  const current = matchRanges.value[activeMatchIndex.value];
+  if (!current) return;
+
+  const rep = replaceQuery.value;
+  editorView.dispatch({
+    changes: { from: current.from, to: current.to, insert: rep },
+  });
+  updateMatches();
+}
+
+function replaceAll() {
+  if (!editorView || matchRanges.value.length === 0) return;
+  const rep = replaceQuery.value;
+
+  const changes = matchRanges.value.slice().reverse().map((r) => ({
+    from: r.from,
+    to: r.to,
+    insert: rep,
+  }));
+
+  editorView.dispatch({ changes });
+  updateMatches();
+}
+
+function closeFindBar() {
+  showFindBar.value = false;
+  showReplaceRow.value = false;
+  findQuery.value = '';
+  matchRanges.value = [];
+  activeMatchIndex.value = 0;
+  if (editorView) {
+    editorView.dispatch({
+      effects: setSearchMatchesEffect.of({ matches: [], activeIndex: -1 }),
+    });
+    editorView.focus();
+  }
+}
+
+function openFind(replace: boolean = false) {
+  showFindBar.value = true;
+  if (replace) {
+    showReplaceRow.value = true;
+  }
+  nextTick(() => {
+    findInputRef.value?.focus();
+    findInputRef.value?.select();
+  });
+}
 
 // Context Menu state
 const contextMenuState = ref({
@@ -280,6 +478,7 @@ function initOrReconfigureCodeMirror() {
       highlightActiveLine(),
       highlightActiveLineGutter(),
       wikilinkAutocomplete(),
+      searchHighlightField,
       livePreviewCompartment.of(
         currentMode.value === 'live' ? livePreviewPlugin : []
       ),
@@ -310,6 +509,20 @@ function initOrReconfigureCodeMirror() {
           },
         },
         {
+          key: 'Mod-f',
+          run: () => {
+            openFind(false);
+            return true;
+          },
+        },
+        {
+          key: 'Mod-h',
+          run: () => {
+            openFind(true);
+            return true;
+          },
+        },
+        {
           key: 'Enter',
           run: insertSmartNewline,
         },
@@ -336,6 +549,10 @@ function initOrReconfigureCodeMirror() {
           saveDebounceTimer = setTimeout(() => {
             saveFileContent(newDoc);
           }, 400);
+
+          if (showFindBar.value) {
+            updateMatches();
+          }
         }
       }),
     ],
@@ -351,6 +568,7 @@ function initOrReconfigureCodeMirror() {
 watch(
   () => activePath.value,
   (_newPath, oldPath) => {
+    closeFindBar();
     if (oldPath && editorView) {
       setCachedEditorState(oldPath, editorView.state);
       editorView.destroy();
@@ -433,10 +651,16 @@ function onIndentLine(e: any) {
   }
 }
 
+function onOpenInNoteFind(e: any) {
+  const replace = Boolean(e?.detail?.replace);
+  openFind(replace);
+}
+
 onMounted(() => {
   window.addEventListener('noty:format-selection', onFormatSelection);
   window.addEventListener('noty:toggle-task', onToggleTask);
   window.addEventListener('noty:indent-line', onIndentLine);
+  window.addEventListener('noty:open-in-note-find', onOpenInNoteFind);
   loadFileContent();
 });
 
@@ -444,6 +668,7 @@ onUnmounted(() => {
   window.removeEventListener('noty:format-selection', onFormatSelection);
   window.removeEventListener('noty:toggle-task', onToggleTask);
   window.removeEventListener('noty:indent-line', onIndentLine);
+  window.removeEventListener('noty:open-in-note-find', onOpenInNoteFind);
   if (activePath.value && editorView) {
     setCachedEditorState(activePath.value, editorView.state);
     editorView.destroy();
@@ -518,8 +743,153 @@ onUnmounted(() => {
     <!-- Active Note View Area -->
     <div
       v-if="activePath && !isImageAttachment"
-      class="flex-1 flex flex-col min-h-0 overflow-hidden"
+      class="flex-1 flex flex-col min-h-0 overflow-hidden relative"
     >
+      <!-- Floating In-Note Find/Replace Bar -->
+      <div
+        v-if="showFindBar"
+        class="absolute top-3 right-5 z-30 bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] rounded-lg shadow-2xl p-2 w-84 text-xs backdrop-blur-md space-y-1.5 animate-in fade-in duration-150"
+      >
+        <!-- Find Row -->
+        <div class="flex items-center gap-1">
+          <div class="relative flex-1 flex items-center">
+            <Search class="w-3.5 h-3.5 absolute left-2 text-[var(--text-muted)] pointer-events-none" />
+            <input
+              ref="findInputRef"
+              v-model="findQuery"
+              @input="updateMatches"
+              @keydown.enter.exact.prevent="nextMatch"
+              @keydown.shift.enter.prevent="prevMatch"
+              @keydown.esc="closeFindBar"
+              type="text"
+              placeholder="Find in note..."
+              class="w-full bg-[var(--background-modifier-form-field)] border border-[var(--background-modifier-border)] text-[var(--text-normal)] rounded pl-7 pr-6 py-1 text-xs outline-none focus:border-[var(--interactive-accent)]"
+            />
+            <button
+              v-if="findQuery"
+              @click="findQuery = ''; updateMatches()"
+              class="absolute right-1.5 text-[var(--text-muted)] hover:text-[var(--text-normal)]"
+            >
+              <X class="w-3 h-3" />
+            </button>
+          </div>
+
+          <!-- Match counter -->
+          <span class="text-[10px] text-[var(--text-muted)] px-1 shrink-0 font-mono">
+            {{ matchRanges.length > 0 ? `${activeMatchIndex + 1}/${matchRanges.length}` : (findQuery ? '0/0' : '') }}
+          </span>
+
+          <!-- Prev / Next buttons -->
+          <button
+            @click="prevMatch"
+            :disabled="matchRanges.length === 0"
+            class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)] disabled:opacity-40 transition-colors"
+            title="Previous match (Shift+Enter)"
+          >
+            <ChevronUp class="w-3.5 h-3.5" />
+          </button>
+          <button
+            @click="nextMatch"
+            :disabled="matchRanges.length === 0"
+            class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)] disabled:opacity-40 transition-colors"
+            title="Next match (Enter)"
+          >
+            <ChevronDown class="w-3.5 h-3.5" />
+          </button>
+
+          <!-- Toggle Replace Row -->
+          <button
+            @click="showReplaceRow = !showReplaceRow"
+            :class="[
+              'p-1 rounded transition-colors',
+              showReplaceRow
+                ? 'bg-[var(--interactive-accent)] text-white'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)]'
+            ]"
+            title="Toggle Replace mode (Ctrl+H)"
+          >
+            <Replace class="w-3.5 h-3.5" />
+          </button>
+
+          <!-- Close button -->
+          <button
+            @click="closeFindBar"
+            class="p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)] transition-colors"
+            title="Close (Escape)"
+          >
+            <X class="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <!-- Toggles: Case sensitive, Regex, Whole word -->
+        <div class="flex items-center gap-1 px-0.5">
+          <button
+            @click="findCaseSensitive = !findCaseSensitive; updateMatches()"
+            :class="[
+              'px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold transition-colors border',
+              findCaseSensitive
+                ? 'bg-[var(--interactive-accent)] text-white border-[var(--interactive-accent)]'
+                : 'bg-[var(--background-secondary-alt)] text-[var(--text-muted)] border-[var(--background-modifier-border)] hover:text-[var(--text-normal)]'
+            ]"
+            title="Match case"
+          >
+            Aa
+          </button>
+          <button
+            @click="findRegex = !findRegex; updateMatches()"
+            :class="[
+              'px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold transition-colors border',
+              findRegex
+                ? 'bg-[var(--interactive-accent)] text-white border-[var(--interactive-accent)]'
+                : 'bg-[var(--background-secondary-alt)] text-[var(--text-muted)] border-[var(--background-modifier-border)] hover:text-[var(--text-normal)]'
+            ]"
+            title="Regular expression"
+          >
+            .*
+          </button>
+          <button
+            @click="findWholeWord = !findWholeWord; updateMatches()"
+            :class="[
+              'px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold transition-colors border',
+              findWholeWord
+                ? 'bg-[var(--interactive-accent)] text-white border-[var(--interactive-accent)]'
+                : 'bg-[var(--background-secondary-alt)] text-[var(--text-muted)] border-[var(--background-modifier-border)] hover:text-[var(--text-normal)]'
+            ]"
+            title="Match whole word"
+          >
+            \b
+          </button>
+        </div>
+
+        <!-- Replace Row -->
+        <div v-if="showReplaceRow" class="flex items-center gap-1 pt-1 border-t border-[var(--background-modifier-border)]">
+          <div class="relative flex-1">
+            <input
+              v-model="replaceQuery"
+              @keydown.enter.exact.prevent="replaceCurrent"
+              @keydown.esc="closeFindBar"
+              type="text"
+              placeholder="Replace with..."
+              class="w-full bg-[var(--background-modifier-form-field)] border border-[var(--background-modifier-border)] text-[var(--text-normal)] rounded px-2.5 py-1 text-xs outline-none focus:border-[var(--interactive-accent)]"
+            />
+          </div>
+          <button
+            @click="replaceCurrent"
+            :disabled="matchRanges.length === 0"
+            class="px-2 py-1 bg-[var(--background-modifier-form-field)] border border-[var(--background-modifier-border)] hover:border-[var(--interactive-accent)] rounded text-[11px] text-[var(--text-normal)] hover:text-white hover:bg-[var(--interactive-accent)] disabled:opacity-40 transition-colors"
+          >
+            Replace
+          </button>
+          <button
+            @click="replaceAll"
+            :disabled="matchRanges.length === 0"
+            class="px-2 py-1 bg-[var(--background-modifier-form-field)] border border-[var(--background-modifier-border)] hover:border-[var(--interactive-accent)] rounded text-[11px] text-[var(--text-normal)] hover:text-white hover:bg-[var(--interactive-accent)] disabled:opacity-40 transition-colors"
+          >
+            All
+          </button>
+        </div>
+      </div>
+
       <!-- Frontmatter / Properties Header -->
       <NoteProperties
         :content="noteContent"

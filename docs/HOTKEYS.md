@@ -37,6 +37,7 @@ This document provides a comprehensive guide to all default keyboard shortcuts i
 | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>\</kbd> | Toggle left sidebar | `app:toggle-left-sidebar` | Collapses or expands the left panel ribbon |
 | <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>\</kbd> | Toggle right sidebar | `app:toggle-right-sidebar` | Collapses or expands the right panel ribbon |
 | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> | Search in files | `app:global-search` | Opens the search panel in the left sidebar |
+| <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>H</kbd> | Global search & replace | `app:global-replace` | Opens the global search and replace dialog across the vault |
 | <kbd>Ctrl</kbd> + <kbd>G</kbd> | Open graph view | `app:graph-view` | Opens the interactive note graph view |
 
 ---
@@ -64,7 +65,8 @@ This document provides a comprehensive guide to all default keyboard shortcuts i
 | <kbd>Ctrl</kbd> + <kbd>Enter</kbd> | Toggle task checkbox | `editor:toggle-task` | Toggles `- [ ]` and `- [x]` on the current line |
 | <kbd>Ctrl</kbd> + <kbd>]</kbd> | Indent line / list item | `editor:indent` | Indents list item or text block |
 | <kbd>Ctrl</kbd> + <kbd>[</kbd> | Outdent line / list item | `editor:outdent` | Outdents list item or text block |
-| <kbd>Ctrl</kbd> + <kbd>F</kbd> | Find in active note | `app:in-note-find` | Opens in-editor search |
+| <kbd>Ctrl</kbd> + <kbd>F</kbd> | Find in active note | `app:in-note-find` | Opens in-editor floating search bar |
+| <kbd>Ctrl</kbd> + <kbd>H</kbd> | Find & replace in active note | `app:in-note-replace` | Opens in-editor floating search and replace bar |
 
 ---
 

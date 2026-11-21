@@ -15,6 +15,7 @@ import CommandPaletteModal from './components/CommandPaletteModal.vue';
 import QuickSwitcherModal from './components/QuickSwitcherModal.vue';
 import HoverPreviewPopover from './components/HoverPreviewPopover.vue';
 import GraphViewModal from './components/GraphViewModal.vue';
+import GlobalReplaceModal from './components/GlobalReplaceModal.vue';
 import { X } from 'lucide-vue-next';
 
 const vault = useVaultStore();
@@ -73,6 +74,7 @@ onUnmounted(() => {
 
     <!-- Modals -->
     <GraphViewModal v-if="workspace.showGraphView" @close="workspace.showGraphView = false" />
+    <GlobalReplaceModal v-if="workspace.showGlobalReplaceModal" @close="workspace.showGlobalReplaceModal = false" />
     <CommandPaletteModal v-if="commandStore.showCommandPalette" />
     <QuickSwitcherModal v-if="commandStore.showQuickSwitcher" />
     <VaultSwitcherModal v-if="vault.showVaultSwitcher" />

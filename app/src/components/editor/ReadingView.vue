@@ -4,6 +4,7 @@ import katex from 'katex';
 import mermaid from 'mermaid';
 import { useVaultStore } from '../../stores/vault';
 import { parseWikilinkInner, handleWikilinkClick } from '../../editor/links';
+import QueryBlockWidget from './QueryBlockWidget.vue';
 import {
   Copy,
   Check,
@@ -33,7 +34,7 @@ const calloutsFolded = ref<Record<number, boolean>>({});
 // Rendered HTML blocks
 interface RenderedBlock {
   id: number;
-  type: 'html' | 'code' | 'mermaid' | 'math-block' | 'callout' | 'table';
+  type: 'html' | 'code' | 'mermaid' | 'math-block' | 'callout' | 'table' | 'query';
   content?: string;
   lang?: string;
   code?: string;
@@ -95,6 +96,14 @@ const renderedBlocks = computed<RenderedBlock[]>(() => {
         blocks.push({
           id: blockId++,
           type: 'mermaid',
+          code: fullCode,
+          rawStartIndex: startLine,
+          rawEndIndex: i,
+        });
+      } else if (lang === 'query') {
+        blocks.push({
+          id: blockId++,
+          type: 'query',
           code: fullCode,
           rawStartIndex: startLine,
           rawEndIndex: i,
@@ -524,6 +533,12 @@ onMounted(() => {
     >
       <!-- 1. Pure HTML Block (Paragraph, Heading, List, HR, Task) -->
       <div v-if="block.type === 'html'" v-html="block.content"></div>
+
+      <!-- Embedded Search Query Block -->
+      <QueryBlockWidget
+        v-else-if="block.type === 'query'"
+        :query="block.code || ''"
+      />
 
       <!-- 2. Code Block -->
       <div

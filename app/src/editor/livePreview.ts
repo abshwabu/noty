@@ -13,6 +13,7 @@ import mermaid from 'mermaid';
 import { parseWikilinkInner, handleWikilinkClick } from './links';
 import { useVaultStore } from '../stores/vault';
 import { getActivePinia } from 'pinia';
+import { vaultSearch } from '../services/search';
 
 // Initialize mermaid
 mermaid.initialize({
@@ -301,6 +302,99 @@ class TableWidget extends WidgetType {
     table.appendChild(tbody);
     wrapper.appendChild(table);
     return wrapper;
+  }
+}
+
+class QueryEmbedWidget extends WidgetType {
+  constructor(readonly query: string) {
+    super();
+  }
+
+  eq(other: QueryEmbedWidget) {
+    return other.query === this.query;
+  }
+
+  toDOM(): HTMLElement {
+    const container = document.createElement('div');
+    container.className =
+      'cm-query-embed-block my-3 rounded-lg border border-[var(--background-modifier-border)] bg-[var(--background-secondary-alt)] overflow-hidden shadow-sm text-xs select-none';
+
+    const header = document.createElement('div');
+    header.className =
+      'px-3 py-2 bg-[var(--background-secondary)] border-b border-[var(--background-modifier-border)] flex items-center justify-between text-xs font-semibold text-[var(--text-accent)]';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'font-mono text-[11px] text-[var(--text-normal)] truncate';
+    titleSpan.textContent = `query: ${this.query.trim()}`;
+
+    const badge = document.createElement('span');
+    badge.className =
+      'query-count-badge text-[10px] text-[var(--text-muted)] bg-[var(--background-primary)] px-2 py-0.5 rounded-full border border-[var(--background-modifier-border)]';
+    badge.textContent = 'Searching...';
+
+    header.appendChild(titleSpan);
+    header.appendChild(badge);
+    container.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'p-2 space-y-1.5 max-h-72 overflow-y-auto';
+    container.appendChild(body);
+
+    vaultSearch(this.query.trim())
+      .then((res) => {
+        badge.textContent = `${res.total_matches} in ${res.total_files}`;
+        if (res.results.length === 0) {
+          body.innerHTML = '<div class="py-3 text-center text-xs text-[var(--text-muted)] italic">No notes matched this query.</div>';
+          return;
+        }
+
+        body.innerHTML = '';
+        for (const r of res.results) {
+          const item = document.createElement('div');
+          item.className =
+            'border border-[var(--background-modifier-border)] rounded bg-[var(--background-primary)] overflow-hidden text-xs';
+
+          const itemHead = document.createElement('div');
+          itemHead.className =
+            'flex items-center gap-1.5 px-2 py-1.5 hover:bg-[var(--background-modifier-hover)] cursor-pointer select-none';
+          itemHead.innerHTML = `
+            <span class="font-medium text-[var(--text-normal)] hover:text-[var(--text-accent)] truncate">${r.file_title || r.file_path}</span>
+            <span class="text-[10px] text-[var(--text-muted)] ml-auto shrink-0">(${r.matches.length})</span>
+          `;
+          itemHead.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleWikilinkClick(r.file_path, true);
+          });
+          item.appendChild(itemHead);
+
+          if (r.matches.length > 0) {
+            const list = document.createElement('div');
+            list.className =
+              'border-t border-[var(--background-modifier-border)] bg-[var(--background-secondary-alt)] px-3 py-1 space-y-1';
+            for (const m of r.matches.slice(0, 5)) {
+              const lineEl = document.createElement('div');
+              lineEl.className =
+                'py-0.5 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-normal)] cursor-pointer truncate flex items-center gap-1.5';
+              lineEl.innerHTML = `<span class="text-[9px] font-mono text-[var(--text-faint)]">L${m.line_number}:</span><span class="truncate">${m.line_text}</span>`;
+              lineEl.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleWikilinkClick(r.file_path, true);
+              });
+              list.appendChild(lineEl);
+            }
+            item.appendChild(list);
+          }
+
+          body.appendChild(item);
+        }
+      })
+      .catch((err) => {
+        body.innerHTML = `<div class="py-2 px-3 text-xs text-red-400">Query error: ${String(err)}</div>`;
+      });
+
+    return container;
   }
 }
 
@@ -680,6 +774,26 @@ function collectBlockWidgets(view: EditorView, queued: QueuedDeco[]) {
         to,
         deco: Decoration.replace({
           widget: new TableWidget(rawLines),
+          block: true,
+        }),
+      });
+    }
+  }
+
+  // 4. Embedded Search Query blocks: ```query ... ```
+  const queryRegex = /```query\s*\n([\s\S]*?)\n```/g;
+  let qMatch: RegExpExecArray | null;
+  while ((qMatch = queryRegex.exec(fullText)) !== null) {
+    const from = qMatch.index;
+    const to = from + qMatch[0].length;
+    const queryStr = qMatch[1];
+
+    if (cursorHead < from || cursorHead > to) {
+      queued.push({
+        from,
+        to,
+        deco: Decoration.replace({
+          widget: new QueryEmbedWidget(queryStr),
           block: true,
         }),
       });

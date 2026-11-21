@@ -566,14 +566,32 @@ export const useCommandStore = defineStore('commands', {
       });
 
       this.registerCommand({
+        id: 'app:global-replace',
+        name: 'Global search and replace across vault',
+        section: 'Navigation',
+        defaultHotkeys: 'Ctrl+Shift+H',
+        callback: () => {
+          workspace.showGlobalReplaceModal = true;
+        },
+      });
+
+      this.registerCommand({
         id: 'app:in-note-find',
         name: 'Find in active note',
         section: 'Editor',
         defaultHotkeys: 'Ctrl+F',
         callback: () => {
-          // Focus or open CodeMirror search
-          const activeEl = document.querySelector('.cm-content') as HTMLElement | null;
-          activeEl?.focus();
+          window.dispatchEvent(new CustomEvent('noty:open-in-note-find', { detail: { replace: false } }));
+        },
+      });
+
+      this.registerCommand({
+        id: 'app:in-note-replace',
+        name: 'Find and replace in active note',
+        section: 'Editor',
+        defaultHotkeys: 'Ctrl+H',
+        callback: () => {
+          window.dispatchEvent(new CustomEvent('noty:open-in-note-find', { detail: { replace: true } }));
         },
       });
 
