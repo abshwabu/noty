@@ -2,6 +2,7 @@
 import { useWorkspaceStore } from '../stores/workspace';
 import { useVaultStore } from '../stores/vault';
 import { useSettingsStore } from '../stores/settings';
+import { useCommandStore } from '../stores/commands';
 import {
   PanelLeft,
   FolderOpen,
@@ -10,11 +11,14 @@ import {
   Settings,
   Trash2,
   Share2,
+  Command as CommandIcon,
+  Layers,
 } from 'lucide-vue-next';
 
 const workspace = useWorkspaceStore();
 const vault = useVaultStore();
 const settings = useSettingsStore();
+const commandStore = useCommandStore();
 
 function handleNewNote() {
   const newName = 'Untitled Note';
@@ -39,7 +43,25 @@ function handleNewNote() {
         <PanelLeft class="w-4 h-4" />
       </button>
 
-      <!-- Quick Switcher / Search -->
+      <!-- Quick Switcher -->
+      <button
+        @click="commandStore.showQuickSwitcher = true"
+        class="w-8 h-8 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)] transition-colors"
+        title="Quick switcher (Ctrl+O)"
+      >
+        <Layers class="w-4 h-4" />
+      </button>
+
+      <!-- Command Palette -->
+      <button
+        @click="commandStore.showCommandPalette = true"
+        class="w-8 h-8 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)] transition-colors"
+        title="Open command palette (Ctrl+P)"
+      >
+        <CommandIcon class="w-4 h-4" />
+      </button>
+
+      <!-- Global Search in Files -->
       <button
         @click="workspace.layout.leftSidebar.activePanel = 'search'; workspace.layout.leftSidebar.collapsed = false"
         class="w-8 h-8 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)] transition-colors"
@@ -52,7 +74,7 @@ function handleNewNote() {
       <button
         @click="vault.showVaultSwitcher = true"
         class="w-8 h-8 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)] transition-colors"
-        title="Open another vault (Ctrl+O)"
+        title="Open another vault (Ctrl+Shift+O)"
       >
         <FolderOpen class="w-4 h-4" />
       </button>

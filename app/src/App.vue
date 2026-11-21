@@ -3,6 +3,7 @@ import { onMounted, onUnmounted } from 'vue';
 import { useVaultStore } from './stores/vault';
 import { useWorkspaceStore } from './stores/workspace';
 import { useSettingsStore } from './stores/settings';
+import { useCommandStore } from './stores/commands';
 import Ribbon from './components/Ribbon.vue';
 import Sidebar from './components/Sidebar.vue';
 import WorkspaceSplitView from './components/workspace/WorkspaceSplitView.vue';
@@ -10,78 +11,30 @@ import StatusBar from './components/StatusBar.vue';
 import VaultSwitcherModal from './components/VaultSwitcherModal.vue';
 import TrashModal from './components/TrashModal.vue';
 import SettingsModal from './components/settings/SettingsModal.vue';
+import CommandPaletteModal from './components/CommandPaletteModal.vue';
+import QuickSwitcherModal from './components/QuickSwitcherModal.vue';
 import { X } from 'lucide-vue-next';
 
 const vault = useVaultStore();
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
+const commandStore = useCommandStore();
 
 function handleKeydown(e: KeyboardEvent) {
-  const isMod = e.ctrlKey || e.metaKey;
-
-  // New Note: Ctrl+N
-  if (isMod && e.key.toLowerCase() === 'n') {
-    e.preventDefault();
-    vault.createFile('', 'Untitled Note').then((path) => {
-      if (path) workspace.openNote(path, { newTab: true });
-    });
-    return;
-  }
-
-  // Quick Switcher / Vault: Ctrl+O
-  if (isMod && e.key.toLowerCase() === 'o') {
-    e.preventDefault();
-    vault.showVaultSwitcher = true;
-    return;
-  }
-
-  // Settings: Ctrl+,
-  if (isMod && e.key === ',') {
-    e.preventDefault();
-    settings.showSettingsModal = !settings.showSettingsModal;
-    return;
-  }
-
-  // Toggle Left Sidebar: Ctrl+\
-  if (isMod && !e.altKey && e.key === '\\') {
-    e.preventDefault();
-    workspace.toggleLeftSidebar();
-    return;
-  }
-
-  // Toggle Right Sidebar: Ctrl+Alt+\
-  if (isMod && e.altKey && e.key === '\\') {
-    e.preventDefault();
-    workspace.toggleRightSidebar();
-    return;
-  }
-
-  // Split Right: Ctrl+Shift+D
-  if (isMod && e.shiftKey && e.key.toLowerCase() === 'd') {
-    e.preventDefault();
-    if (workspace.layout.activeLeafId) {
-      workspace.splitLeaf(workspace.layout.activeLeafId, 'horizontal', true);
-    }
-    return;
-  }
-
-  // Close Tab: Ctrl+W
-  if (isMod && e.key.toLowerCase() === 'w') {
-    e.preventDefault();
-    const leaf = workspace.activeLeaf;
-    if (leaf && leaf.activeTabId) {
-      workspace.closeTab(leaf.id, leaf.activeTabId);
-    }
-    return;
-  }
+  commandStore.handleGlobalKeydown(e);
 }
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown);
+
+  // Initialize command registry & load hotkeys
+  commandStore.initCoreCommands();
+
   // Initialize vault, settings, and workspace layout
   await vault.init();
   await settings.loadSettings();
   await workspace.loadLayout();
+  await commandStore.loadHotkeysFromVault();
 
   // If a note was active in workspace layout, activate it
   if (workspace.activeNotePath) {
@@ -117,6 +70,8 @@ onUnmounted(() => {
     <StatusBar />
 
     <!-- Modals -->
+    <CommandPaletteModal v-if="commandStore.showCommandPalette" />
+    <QuickSwitcherModal v-if="commandStore.showQuickSwitcher" />
     <VaultSwitcherModal v-if="vault.showVaultSwitcher" />
     <TrashModal v-if="vault.showTrashModal" />
     <SettingsModal v-if="settings.showSettingsModal" />

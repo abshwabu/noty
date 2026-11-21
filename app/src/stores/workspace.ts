@@ -189,6 +189,15 @@ export const useWorkspaceStore = defineStore('workspace', {
       this.triggerAutoSave();
     },
 
+    setActiveTab(leafId: string, tabId: string) {
+      const leaf = this.findLeaf(this.layout.root, leafId);
+      if (leaf && leaf.tabs.some((t) => t.id === tabId)) {
+        leaf.activeTabId = tabId;
+        this.layout.activeLeafId = leafId;
+        this.triggerAutoSave();
+      }
+    },
+
     openNote(path: string, options?: { newTab?: boolean; splitDirection?: 'horizontal' | 'vertical'; leafId?: string }) {
       const targetLeafId = options?.leafId || this.layout.activeLeafId;
       let leaf = this.findLeaf(this.layout.root, targetLeafId);

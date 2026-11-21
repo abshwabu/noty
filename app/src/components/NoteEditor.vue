@@ -19,7 +19,7 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { codeFolding, foldGutter, foldKeymap } from '@codemirror/language';
 import { vim } from '@replit/codemirror-vim';
 import { livePreviewPlugin } from '../editor/livePreview';
-import { insertSmartNewline, smartIndent, smartOutdent } from '../editor/keymaps';
+import { insertSmartNewline, smartIndent, smartOutdent, toggleTaskUnderCursor } from '../editor/keymaps';
 import { createAttachmentHandler } from '../editor/attachments';
 import { getCachedEditorState, setCachedEditorState } from '../editor/stateCache';
 import NoteProperties from './editor/NoteProperties.vue';
@@ -403,11 +403,45 @@ function handleContextAction(action: string) {
   }
 }
 
+function onFormatSelection(e: any) {
+  if (!editorView || isImageAttachment.value || currentMode.value === 'reading') return;
+  const { prefix, suffix } = e.detail;
+  const state = editorView.state;
+  const sel = state.selection.main;
+  const selectedText = state.sliceDoc(sel.from, sel.to);
+  const replacement = `${prefix}${selectedText}${suffix}`;
+  editorView.dispatch({
+    changes: { from: sel.from, to: sel.to, insert: replacement },
+    selection: { anchor: sel.from + prefix.length, head: sel.to + prefix.length },
+  });
+  editorView.focus();
+}
+
+function onToggleTask() {
+  if (!editorView || isImageAttachment.value || currentMode.value === 'reading') return;
+  toggleTaskUnderCursor(editorView);
+}
+
+function onIndentLine(e: any) {
+  if (!editorView || isImageAttachment.value || currentMode.value === 'reading') return;
+  if (e.detail?.isIndent) {
+    smartIndent(editorView);
+  } else {
+    smartOutdent(editorView);
+  }
+}
+
 onMounted(() => {
+  window.addEventListener('noty:format-selection', onFormatSelection);
+  window.addEventListener('noty:toggle-task', onToggleTask);
+  window.addEventListener('noty:indent-line', onIndentLine);
   loadFileContent();
 });
 
 onUnmounted(() => {
+  window.removeEventListener('noty:format-selection', onFormatSelection);
+  window.removeEventListener('noty:toggle-task', onToggleTask);
+  window.removeEventListener('noty:indent-line', onIndentLine);
   if (activePath.value && editorView) {
     setCachedEditorState(activePath.value, editorView.state);
     editorView.destroy();
