@@ -727,6 +727,58 @@ impl VaultManager {
         fs::write(config_path, content).map_err(|e| e.to_string())?;
         Ok(())
     }
+
+    // --- CSS Snippets (.<appname>/snippets/) ---
+
+    pub fn list_snippets(&self) -> Result<Vec<String>, String> {
+        let vault_root = self.get_current_vault_path()?;
+        let snippets_dir = vault_root.join(APP_CONFIG_DIR_NAME).join("snippets");
+        if !snippets_dir.exists() {
+            let _ = fs::create_dir_all(&snippets_dir);
+            return Ok(Vec::new());
+        }
+
+        let mut snippets = Vec::new();
+        if let Ok(entries) = fs::read_dir(&snippets_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(ext) = path.extension() {
+                        if ext == "css" {
+                            if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
+                                snippets.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        snippets.sort();
+        Ok(snippets)
+    }
+
+    pub fn read_snippet(&self, snippet_name: &str) -> Result<String, String> {
+        let vault_root = self.get_current_vault_path()?;
+        let clean = snippet_name.trim_end_matches(".css");
+        let path = vault_root.join(APP_CONFIG_DIR_NAME).join("snippets").join(format!("{}.css", clean));
+        if !path.exists() {
+            return Err(format!("Snippet {} not found", snippet_name));
+        }
+        fs::read_to_string(path).map_err(|e| e.to_string())
+    }
+
+    pub fn write_snippet(&self, snippet_name: &str, content: &str) -> Result<(), String> {
+        let vault_root = self.get_current_vault_path()?;
+        let snippets_dir = vault_root.join(APP_CONFIG_DIR_NAME).join("snippets");
+        if !snippets_dir.exists() {
+            fs::create_dir_all(&snippets_dir).map_err(|e| e.to_string())?;
+        }
+        let clean = snippet_name.trim_end_matches(".css");
+        let path = snippets_dir.join(format!("{}.css", clean));
+        self.mark_own_write(&path);
+        fs::write(path, content).map_err(|e| e.to_string())?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -897,5 +949,29 @@ mod tests {
         assert_eq!(hints.attachment_folder, Some("assets".to_string()));
         assert_eq!(hints.new_file_location, Some("notes".to_string()));
         assert_eq!(hints.theme, Some("dark".to_string()));
+    }
+
+    #[test]
+    fn test_css_snippets() {
+        let temp_dir = tempdir().unwrap();
+        let vault_dir = temp_dir.path().join("vault");
+        let recent_file = temp_dir.path().join("recents.json");
+
+        let manager = VaultManager::new(recent_file);
+        manager.set_current_vault(vault_dir).unwrap();
+
+        // Initially empty
+        let initial = manager.list_snippets().unwrap();
+        assert!(initial.is_empty());
+
+        // Write snippets
+        manager.write_snippet("custom-theme", ".cm-editor { color: red; }").unwrap();
+        manager.write_snippet("translucent.css", "body { opacity: 0.95; }").unwrap();
+
+        let list = manager.list_snippets().unwrap();
+        assert_eq!(list, vec!["custom-theme".to_string(), "translucent".to_string()]);
+
+        let content = manager.read_snippet("custom-theme").unwrap();
+        assert_eq!(content, ".cm-editor { color: red; }");
     }
 }

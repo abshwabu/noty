@@ -259,6 +259,24 @@ export function setupBrowserMockBackend() {
         } catch {}
         return true;
 
+      case 'vault_list_snippets':
+        return ['translucent-ui', 'custom-accents'];
+
+      case 'vault_read_snippet':
+        if (args.snippetName.includes('translucent')) {
+          return '/* Translucent sidebar snippet */\n.workspace-ribbon, .sidebar-container { backdrop-filter: blur(8px); }';
+        }
+        return '/* Custom Accent Snippet */\n:root { --interactive-accent: #8b5cf6; }';
+
+      case 'vault_write_snippet':
+        return true;
+
+      case 'vault_open_popout':
+        if (typeof window !== 'undefined') {
+          window.open(window.location.href, '_blank', 'width=800,height=600');
+        }
+        return true;
+
       default:
         console.warn('[Mock IPC] Unhandled command:', cmd, args);
         return null;

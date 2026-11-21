@@ -2,31 +2,90 @@
 
 @layer base {
   :root {
-    --bg-primary: #18181b;
-    --bg-secondary: #27272a;
-    --bg-tertiary: #3f3f46;
-    --text-primary: #f4f4f5;
-    --text-secondary: #a1a1aa;
-    --text-muted: #71717a;
-    --accent: #8b5cf6;
-    --accent-hover: #7c3aed;
-    --border: #27272a;
-    --border-subtle: #3f3f46;
+    /* Obsidian-style CSS Variables - Dark (default) */
+    --background-primary: #1e1e22;
+    --background-primary-alt: #18181c;
+    --background-secondary: #26262b;
+    --background-secondary-alt: #161619;
+    --background-modifier-border: #333338;
+    --background-modifier-border-hover: #484852;
+    --background-modifier-border-focus: #7c3aed;
+    --background-modifier-form-field: #141416;
+    --background-modifier-hover: rgba(255, 255, 255, 0.06);
+    --background-modifier-active-hover: rgba(139, 92, 246, 0.15);
+
+    --text-normal: #dcddde;
+    --text-muted: #9999a3;
+    --text-faint: #666670;
+    --text-accent: #a855f7;
+    --text-accent-hover: #c084fc;
+
+    --interactive-normal: #2a2a30;
+    --interactive-hover: #36363e;
+    --interactive-accent: #7c3aed;
+    --interactive-accent-hover: #6d28d9;
+
+    --ribbon-background: #141416;
+    --status-bar-background: #141416;
+    --tab-background-active: #1e1e22;
+    --tab-text-color-focused-active: #f4f4f5;
+
+    --font-interface: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
+    --font-text: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
+    --font-monospace: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    --font-size-normal: 14px;
+
+    --radius-s: 4px;
+    --radius-m: 6px;
+    --radius-l: 10px;
+
+    --zoom-factor: 1;
+  }
+
+  /* Light Theme */
+  [data-theme="light"] {
+    --background-primary: #ffffff;
+    --background-primary-alt: #f8f9fa;
+    --background-secondary: #f3f3f6;
+    --background-secondary-alt: #ebebed;
+    --background-modifier-border: #e2e2e7;
+    --background-modifier-border-hover: #cbccd2;
+    --background-modifier-border-focus: #7c3aed;
+    --background-modifier-form-field: #ffffff;
+    --background-modifier-hover: rgba(0, 0, 0, 0.05);
+    --background-modifier-active-hover: rgba(139, 92, 246, 0.12);
+
+    --text-normal: #222226;
+    --text-muted: #666672;
+    --text-faint: #9c9ca6;
+    --text-accent: #7c3aed;
+    --text-accent-hover: #6d28d9;
+
+    --interactive-normal: #e6e6ea;
+    --interactive-hover: #dadade;
+    --interactive-accent: #7c3aed;
+    --interactive-accent-hover: #6d28d9;
+
+    --ribbon-background: #e9e9ee;
+    --status-bar-background: #e9e9ee;
+    --tab-background-active: #ffffff;
+    --tab-text-color-focused-active: #18181b;
   }
 
   body {
     margin: 0;
     padding: 0;
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+    background-color: var(--background-primary);
+    color: var(--text-normal);
+    font-family: var(--font-interface);
+    font-size: var(--font-size-normal);
     user-select: none;
     overflow: hidden;
     height: 100vh;
     width: 100vw;
   }
 
-  /* Custom scrollbars */
+  /* Custom scrollbars matching Obsidian */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -35,18 +94,18 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #3f3f46;
-    border-radius: 3px;
+    background: var(--background-modifier-border);
+    border-radius: var(--radius-s);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #52525b;
+    background: var(--background-modifier-border-hover);
   }
 }
 
 /* CodeMirror customizations */
 .cm-editor {
   height: 100%;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: var(--font-monospace);
   font-size: 14px;
 }
 .cm-scroller {

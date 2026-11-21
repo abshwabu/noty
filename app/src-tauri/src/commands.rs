@@ -2,6 +2,7 @@ use crate::vault::{FileNode, RecentVault, TrashItem, VaultInfo, VaultManager};
 use crate::watcher::VaultWatcherController;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
@@ -235,5 +236,48 @@ pub async fn vault_write_config(
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
     state.vault_manager.write_config(&config_name, &content)?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn vault_list_snippets(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    state.vault_manager.list_snippets()
+}
+
+#[tauri::command]
+pub async fn vault_read_snippet(snippet_name: String, state: State<'_, AppState>) -> Result<String, String> {
+    state.vault_manager.read_snippet(&snippet_name)
+}
+
+#[tauri::command]
+pub async fn vault_write_snippet(
+    snippet_name: String,
+    content: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    state.vault_manager.write_snippet(&snippet_name, &content)?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn vault_open_popout(
+    path: String,
+    title: String,
+    _app_handle: AppHandle,
+) -> Result<bool, String> {
+    #[cfg(desktop)]
+    {
+        let window_label = format!("popout_{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis());
+        let _ = tauri::WebviewWindowBuilder::new(
+            &_app_handle,
+            &window_label,
+            tauri::WebviewUrl::App("index.html".into()),
+        )
+        .title(title)
+        .inner_size(800.0, 600.0)
+        .build();
+    }
+    let _ = path;
+    let _ = title;
     Ok(true)
 }

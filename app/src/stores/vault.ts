@@ -345,6 +345,7 @@ export const useVaultStore = defineStore('vault', {
         });
         await this.refreshTree();
         await this.openFile(relPath);
+        return relPath;
       } catch (err: any) {
         this.errorMessage = `Failed to create file: ${err}`;
         throw err;
