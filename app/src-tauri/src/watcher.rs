@@ -135,11 +135,19 @@ impl VaultWatcherController {
                             .replace('\\', "/");
 
                         let payload = FileChangeEvent {
-                            event_type,
+                            event_type: event_type.clone(),
                             path: path.to_string_lossy().to_string(),
-                            relative_path: rel_path,
+                            relative_path: rel_path.clone(),
                             is_dir,
                         };
+
+                        if rel_path.ends_with(".md") {
+                            if event_type == "delete" {
+                                let _ = vault_manager.delete_from_index(&rel_path);
+                            } else {
+                                let _ = vault_manager.index_file_from_disk(&rel_path);
+                            }
+                        }
 
                         let _ = app_handle.emit("vault:file-changed", &payload);
                     }

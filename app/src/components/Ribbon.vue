@@ -88,11 +88,11 @@ function handleNewNote() {
         <FilePlus class="w-4 h-4" />
       </button>
 
-      <!-- Graph View Icon Placeholder -->
+      <!-- Graph View Icon -->
       <button
-        @click="workspace.openNote('Welcome.md')"
+        @click="workspace.showGraphView = true"
         class="w-8 h-8 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)] transition-colors"
-        title="Open graph view"
+        title="Open graph view (Ctrl+G)"
       >
         <Share2 class="w-4 h-4" />
       </button>

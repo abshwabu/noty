@@ -335,6 +335,117 @@ flowchart LR
         }
         return true;
 
+      case 'vault_get_backlinks': {
+        const target = (args.relativePath || '').replace(/\.md$/, '').split('/').pop() || '';
+        return {
+          linked_mentions: [
+            {
+              source_path: 'Welcome.md',
+              source_title: 'Welcome',
+              line_number: 48,
+              context_snippet: `Reference to [[${target}]] in this note.`,
+              alias: null,
+              heading: null,
+            },
+          ],
+          unlinked_mentions: [
+            {
+              source_path: 'Obsidian Import.md',
+              source_title: 'Obsidian Import',
+              line_number: 12,
+              match_text: target,
+              context_snippet: `Discussion about ${target} without a direct wikilink.`,
+            },
+          ],
+        };
+      }
+
+      case 'vault_get_outgoing_links': {
+        return [
+          {
+            target_note: 'Obsidian Import',
+            display_text: 'Obsidian Import',
+            heading: null,
+            block: null,
+            is_embed: false,
+            is_resolved: true,
+            line_number: 14,
+          },
+          {
+            target_note: 'Nonexistent Note',
+            display_text: 'Nonexistent Note',
+            heading: null,
+            block: null,
+            is_embed: false,
+            is_resolved: false,
+            line_number: 22,
+          },
+          {
+            target_note: 'attachments/diagram.png',
+            display_text: 'diagram.png',
+            heading: null,
+            block: null,
+            is_embed: true,
+            is_resolved: true,
+            line_number: 30,
+          },
+        ];
+      }
+
+      case 'vault_get_tags': {
+        return [
+          { tag: 'obsidian', count: 5, files: ['Welcome.md', 'Obsidian Import.md'] },
+          { tag: 'tauri', count: 4, files: ['Welcome.md', 'Projects/Noty.md'] },
+          { tag: 'project/mobile', count: 3, files: ['Projects/Noty.md'] },
+          { tag: 'markdown/editor', count: 2, files: ['Welcome.md'] },
+          { tag: 'tasks', count: 2, files: ['Welcome.md'] },
+        ];
+      }
+
+      case 'vault_get_outline': {
+        const content = filesMap.get(args.relativePath) || '';
+        const headings: any[] = [];
+        const lines = content.split('\n');
+        lines.forEach((line, idx) => {
+          const m = line.match(/^(#{1,6})\s+(.*)$/);
+          if (m) {
+            headings.push({
+              level: m[1].length,
+              text: m[2].trim(),
+              line_number: idx + 1,
+            });
+          }
+        });
+        if (headings.length === 0) {
+          headings.push({ level: 1, text: 'Note Title', line_number: 1 });
+        }
+        return headings;
+      }
+
+      case 'vault_get_graph_data': {
+        const nodes: any[] = [];
+        const edges: any[] = [];
+        Array.from(filesMap.keys()).forEach((path) => {
+          if (path.endsWith('.md')) {
+            const name = path.replace(/\.md$/, '').split('/').pop() || path;
+            nodes.push({
+              id: path,
+              name,
+              path,
+              link_count: 2,
+              tags: ['note'],
+            });
+          }
+        });
+        if (nodes.length >= 2) {
+          edges.push({ source: nodes[0].id, target: nodes[1].id });
+        }
+        return { nodes, edges };
+      }
+
+      case 'vault_update_links_on_rename':
+        return 1;
+
       default:
         console.warn('[Mock IPC] Unhandled command:', cmd, args);
         return null;

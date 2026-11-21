@@ -13,6 +13,8 @@ import TrashModal from './components/TrashModal.vue';
 import SettingsModal from './components/settings/SettingsModal.vue';
 import CommandPaletteModal from './components/CommandPaletteModal.vue';
 import QuickSwitcherModal from './components/QuickSwitcherModal.vue';
+import HoverPreviewPopover from './components/HoverPreviewPopover.vue';
+import GraphViewModal from './components/GraphViewModal.vue';
 import { X } from 'lucide-vue-next';
 
 const vault = useVaultStore();
@@ -70,11 +72,15 @@ onUnmounted(() => {
     <StatusBar />
 
     <!-- Modals -->
+    <GraphViewModal v-if="workspace.showGraphView" @close="workspace.showGraphView = false" />
     <CommandPaletteModal v-if="commandStore.showCommandPalette" />
     <QuickSwitcherModal v-if="commandStore.showQuickSwitcher" />
     <VaultSwitcherModal v-if="vault.showVaultSwitcher" />
     <TrashModal v-if="vault.showTrashModal" />
     <SettingsModal v-if="settings.showSettingsModal" />
+
+    <!-- Global Hover Preview for Wikilinks -->
+    <HoverPreviewPopover />
 
     <!-- Error Banner / Toast -->
     <div

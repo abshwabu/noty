@@ -19,6 +19,7 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { codeFolding, foldGutter, foldKeymap } from '@codemirror/language';
 import { vim } from '@replit/codemirror-vim';
 import { livePreviewPlugin } from '../editor/livePreview';
+import { wikilinkAutocomplete } from '../editor/autocomplete';
 import { insertSmartNewline, smartIndent, smartOutdent, toggleTaskUnderCursor } from '../editor/keymaps';
 import { createAttachmentHandler } from '../editor/attachments';
 import { getCachedEditorState, setCachedEditorState } from '../editor/stateCache';
@@ -278,6 +279,7 @@ function initOrReconfigureCodeMirror() {
       history(),
       highlightActiveLine(),
       highlightActiveLineGutter(),
+      wikilinkAutocomplete(),
       livePreviewCompartment.of(
         currentMode.value === 'live' ? livePreviewPlugin : []
       ),

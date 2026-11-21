@@ -37,6 +37,22 @@ export const useVaultStore = defineStore('vault', {
       return !!this.currentVault;
     },
 
+    allFilePaths(): string[] {
+      const paths: string[] = [];
+      const traverse = (nodes: FileNode[]) => {
+        for (const n of nodes) {
+          if (!n.is_dir) {
+            paths.push(n.relative_path);
+          }
+          if (n.children) {
+            traverse(n.children);
+          }
+        }
+      };
+      traverse(this.fileTree);
+      return paths;
+    },
+
     activeFileNode(): FileNode | null {
       if (!this.activeFilePath) return null;
       const findNode = (nodes: FileNode[]): FileNode | null => {

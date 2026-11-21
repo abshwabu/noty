@@ -2,6 +2,8 @@
 import { computed, ref, onMounted, nextTick, watch } from 'vue';
 import katex from 'katex';
 import mermaid from 'mermaid';
+import { useVaultStore } from '../../stores/vault';
+import { parseWikilinkInner, handleWikilinkClick } from '../../editor/links';
 import {
   Copy,
   Check,
@@ -13,6 +15,8 @@ import {
   CheckCircle,
   Flame,
 } from 'lucide-vue-next';
+
+const vault = useVaultStore();
 
 const props = defineProps<{
   content: string;
@@ -330,12 +334,60 @@ function renderInlineMarkdown(text: string): string {
   });
 
   // Wikilinks: [[Note Name]] or ![[Image.png]]
+  const availableFiles = vault.allFilePaths;
+
+  // Embeds: ![[target]]
   out = out.replace(/!\[\[(.*?)\]\]/g, (_, target) => {
-    return `<div class="my-3 flex justify-center"><img src="/${target}" alt="${target}" class="max-h-96 rounded border border-[var(--background-modifier-border)] object-contain shadow-sm" /></div>`;
+    const clean = target.trim();
+    const ext = clean.split('.').pop()?.toLowerCase();
+    const isImage = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext || '');
+    const isPdf = ext === 'pdf';
+
+    if (isImage) {
+      const src = clean.startsWith('/') ? clean : `/${clean}`;
+      return `<div class="my-3 flex justify-center"><img src="${src}" alt="${clean}" class="max-h-96 rounded border border-[var(--background-modifier-border)] object-contain shadow-sm" /></div>`;
+    }
+
+    if (isPdf) {
+      return `
+        <div class="my-3 p-3 bg-[var(--background-secondary)] rounded border border-[var(--background-modifier-border)] flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="px-1.5 py-0.5 rounded bg-red-950/80 text-red-300 font-mono text-[10px] font-bold">PDF</span>
+            <span class="text-xs text-[var(--text-normal)] font-medium">${clean}</span>
+          </div>
+          <span class="text-[11px] text-[var(--text-muted)]">Embedded Document</span>
+        </div>
+      `;
+    }
+
+    // Transclusion of another note
+    return `
+      <div class="my-3 p-3 bg-[var(--background-secondary-alt)] border-l-4 border-[var(--interactive-accent)] rounded-r cursor-pointer" data-wikilink-target="${clean}" data-resolved="true">
+        <div class="text-[11px] font-semibold text-[var(--text-accent)] mb-1 flex items-center gap-1.5">
+          <span>📄 Transclusion: ${clean}</span>
+        </div>
+        <div class="text-xs text-[var(--text-muted)] italic">Click to view note [[${clean}]]</div>
+      </div>
+    `;
   });
 
-  out = out.replace(/\[\[(.*?)\]\]/g, (_, target) => {
-    return `<a class="text-[var(--text-accent)] hover:underline cursor-pointer font-medium">[[${target}]]</a>`;
+  // Wikilinks: [[target|alias]]
+  out = out.replace(/(?<!!)\[\[(.*?)\]\]/g, (_, inner) => {
+    const parsed = parseWikilinkInner(inner, false, availableFiles);
+    if (parsed.isResolved) {
+      return `<a class="cm-wikilink text-[var(--text-accent)] hover:underline cursor-pointer font-medium" data-wikilink-target="${parsed.targetNote}" data-resolved="true" data-heading="${parsed.heading || ''}">${parsed.displayText}</a>`;
+    } else {
+      return `<a class="cm-wikilink cm-link-unresolved text-[var(--text-muted)] opacity-70 hover:opacity-100 hover:text-[var(--text-accent)] underline decoration-dashed cursor-pointer font-medium" data-wikilink-target="${parsed.targetNote}" data-resolved="false" title="Click to create note: ${parsed.targetNote}">${parsed.displayText}</a>`;
+    }
+  });
+
+  // Tags: #tag or #nested/tag
+  out = out.replace(/(?:^|\s)(#[a-zA-Z0-9_\-/]+)/g, (fullMatch, tagMatch) => {
+    if (/^#[0-9a-fA-F]{3,6}$/.test(tagMatch)) {
+      return fullMatch;
+    }
+    const cleanTag = tagMatch.slice(1);
+    return ` <span class="cm-tag px-1.5 py-0.5 rounded bg-[var(--background-modifier-hover)] text-[var(--text-accent)] font-medium text-xs cursor-pointer select-none" data-tag="${cleanTag}">#${cleanTag}</span>`;
   });
 
   // Highlight: ==text==
@@ -434,6 +486,16 @@ function handleContainerClick(e: MouseEvent) {
       const isChecked = (target as HTMLInputElement).checked;
       handleCheckboxClick(lineNum, isChecked);
     }
+    return;
+  }
+
+  // Handle Wikilink clicks
+  const wikilinkEl = target?.closest('[data-wikilink-target]') as HTMLElement | null;
+  if (wikilinkEl) {
+    const targetNote = wikilinkEl.getAttribute('data-wikilink-target') || '';
+    const isResolved = wikilinkEl.getAttribute('data-resolved') === 'true';
+    const heading = wikilinkEl.getAttribute('data-heading') || undefined;
+    handleWikilinkClick(targetNote, isResolved, heading);
   }
 }
 

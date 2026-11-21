@@ -1,3 +1,4 @@
+use crate::vault::db::{BacklinksResult, GraphData, HeadingItem, OutgoingLinkItem, TagCountItem};
 use crate::vault::{FileNode, RecentVault, TrashItem, VaultInfo, VaultManager};
 use crate::watcher::VaultWatcherController;
 use std::path::{Path, PathBuf};
@@ -290,4 +291,51 @@ pub async fn vault_open_popout(
     let _ = path;
     let _ = title;
     Ok(true)
+}
+
+#[tauri::command]
+pub async fn vault_get_backlinks(
+    relative_path: String,
+    state: State<'_, AppState>,
+) -> Result<BacklinksResult, String> {
+    state.vault_manager.get_backlinks(&relative_path)
+}
+
+#[tauri::command]
+pub async fn vault_get_outgoing_links(
+    relative_path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<OutgoingLinkItem>, String> {
+    state.vault_manager.get_outgoing_links(&relative_path)
+}
+
+#[tauri::command]
+pub async fn vault_get_tags(
+    state: State<'_, AppState>,
+) -> Result<Vec<TagCountItem>, String> {
+    state.vault_manager.get_tags()
+}
+
+#[tauri::command]
+pub async fn vault_get_outline(
+    relative_path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<HeadingItem>, String> {
+    state.vault_manager.get_outline(&relative_path)
+}
+
+#[tauri::command]
+pub async fn vault_get_graph_data(
+    state: State<'_, AppState>,
+) -> Result<GraphData, String> {
+    state.vault_manager.get_graph_data()
+}
+
+#[tauri::command]
+pub async fn vault_update_links_on_rename(
+    old_path: String,
+    new_path: String,
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    state.vault_manager.update_links_on_rename(&old_path, &new_path)
 }

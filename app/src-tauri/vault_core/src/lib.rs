@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+pub mod db;
+use db::{BacklinksResult, GraphData, HeadingItem, MetadataIndex, OutgoingLinkItem, TagCountItem};
+
 pub const APP_CONFIG_DIR_NAME: &str = ".noty";
 pub const TRASH_DIR_NAME: &str = ".trash";
 pub const OBSIDIAN_DIR_NAME: &str = ".obsidian";
@@ -79,6 +82,7 @@ pub struct VaultManager {
     pub current_vault: Mutex<Option<PathBuf>>,
     pub recent_vaults_file: PathBuf,
     pub own_writes: Arc<Mutex<HashMap<PathBuf, Instant>>>,
+    pub index: Arc<Mutex<Option<MetadataIndex>>>,
 }
 
 impl VaultManager {
@@ -87,6 +91,7 @@ impl VaultManager {
             current_vault: Mutex::new(None),
             recent_vaults_file,
             own_writes: Arc::new(Mutex::new(HashMap::new())),
+            index: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -173,6 +178,14 @@ impl VaultManager {
         {
             let mut lock = self.current_vault.lock().map_err(|e| e.to_string())?;
             *lock = Some(canonical_path.clone());
+        }
+
+        // Initialize SQLite metadata index
+        if let Ok(index) = MetadataIndex::new(&canonical_path) {
+            let _ = index.index_all_files(&canonical_path);
+            if let Ok(mut idx_lock) = self.index.lock() {
+                *idx_lock = Some(index);
+            }
         }
 
         // Add to recent vaults
@@ -447,6 +460,18 @@ impl VaultManager {
         // Also mark canonical path after write
         self.mark_own_write(&target_path);
 
+        if relative_path.ends_with(".md") {
+            if let Ok(lock) = self.index.lock() {
+                if let Some(index) = lock.as_ref() {
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    let _ = index.index_file(relative_path, &formatted_content, now);
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -543,6 +568,11 @@ impl VaultManager {
         fs::rename(&old_path, &new_path).map_err(|e| format!("Failed to rename: {}", e))?;
 
         self.mark_own_write(&new_path);
+
+        if old_relative_path.ends_with(".md") {
+            let _ = self.update_links_on_rename(old_relative_path, new_relative_path);
+        }
+
         Ok(())
     }
 
@@ -584,6 +614,10 @@ impl VaultManager {
             .unwrap_or(&dest_path)
             .to_string_lossy()
             .replace('\\', "/");
+
+        if source_relative_path.ends_with(".md") {
+            let _ = self.update_links_on_rename(source_relative_path, &new_rel);
+        }
 
         Ok(new_rel)
     }
@@ -637,6 +671,12 @@ impl VaultManager {
         let mut manifest = Self::read_trash_manifest(&manifest_path);
         manifest.items.push(trash_item.clone());
         Self::write_trash_manifest(&manifest_path, &manifest)?;
+
+        if let Ok(lock) = self.index.lock() {
+            if let Some(index) = lock.as_ref() {
+                let _ = index.delete_file(relative_path);
+            }
+        }
 
         Ok(trash_item)
     }
@@ -823,6 +863,117 @@ impl VaultManager {
         let path = snippets_dir.join(format!("{}.css", clean));
         self.mark_own_write(&path);
         fs::write(path, content).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    // --- Metadata Index & Links ---
+
+    pub fn update_links_on_rename(&self, old_rel: &str, new_rel: &str) -> Result<usize, String> {
+        let vault_path = self.get_current_vault_path()?;
+        let tree = self.list_tree().unwrap_or_default();
+        let mut total_updated = 0;
+
+        fn collect_md_paths(nodes: &[FileNode], acc: &mut Vec<String>) {
+            for node in nodes {
+                if node.is_dir {
+                    if let Some(children) = &node.children {
+                        collect_md_paths(children, acc);
+                    }
+                } else if node.relative_path.ends_with(".md") {
+                    acc.push(node.relative_path.clone());
+                }
+            }
+        }
+
+        let mut md_paths = Vec::new();
+        collect_md_paths(&tree, &mut md_paths);
+
+        for path in md_paths {
+            if path == old_rel {
+                continue;
+            }
+            if let Ok(content) = self.read_file(&path) {
+                let (updated_content, count) = db::update_links_in_markdown(&content, old_rel, new_rel);
+                if count > 0 {
+                    let _ = self.write_file_atomic(&path, &updated_content);
+                    total_updated += count;
+                }
+            }
+        }
+
+        if let Ok(lock) = self.index.lock() {
+            if let Some(index) = lock.as_ref() {
+                let _ = index.delete_file(old_rel);
+                let full = vault_path.join(new_rel);
+                if let Ok(content) = fs::read_to_string(&full) {
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    let _ = index.index_file(new_rel, &content, now);
+                }
+            }
+        }
+
+        Ok(total_updated)
+    }
+
+    pub fn get_backlinks(&self, relative_path: &str) -> Result<BacklinksResult, String> {
+        let vault_path = self.get_current_vault_path()?;
+        let lock = self.index.lock().map_err(|e| e.to_string())?;
+        let index = lock.as_ref().ok_or_else(|| "Metadata index not initialized".to_string())?;
+        index.get_backlinks(relative_path, &vault_path)
+    }
+
+    pub fn get_outgoing_links(&self, relative_path: &str) -> Result<Vec<OutgoingLinkItem>, String> {
+        let vault_path = self.get_current_vault_path()?;
+        let lock = self.index.lock().map_err(|e| e.to_string())?;
+        let index = lock.as_ref().ok_or_else(|| "Metadata index not initialized".to_string())?;
+        index.get_outgoing_links(relative_path, &vault_path)
+    }
+
+    pub fn get_tags(&self) -> Result<Vec<TagCountItem>, String> {
+        let lock = self.index.lock().map_err(|e| e.to_string())?;
+        let index = lock.as_ref().ok_or_else(|| "Metadata index not initialized".to_string())?;
+        index.get_tags()
+    }
+
+    pub fn get_outline(&self, relative_path: &str) -> Result<Vec<HeadingItem>, String> {
+        let lock = self.index.lock().map_err(|e| e.to_string())?;
+        let index = lock.as_ref().ok_or_else(|| "Metadata index not initialized".to_string())?;
+        index.get_outline(relative_path)
+    }
+
+    pub fn get_graph_data(&self) -> Result<GraphData, String> {
+        let lock = self.index.lock().map_err(|e| e.to_string())?;
+        let index = lock.as_ref().ok_or_else(|| "Metadata index not initialized".to_string())?;
+        index.get_graph_data()
+    }
+
+    pub fn index_file_from_disk(&self, relative_path: &str) -> Result<(), String> {
+        let full = self.resolve_relative_path(relative_path)?;
+        if !full.exists() {
+            return Ok(());
+        }
+        let content = fs::read_to_string(&full).map_err(|e| e.to_string())?;
+        let mtime = fs::metadata(&full)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let lock = self.index.lock().map_err(|e| e.to_string())?;
+        if let Some(index) = lock.as_ref() {
+            index.index_file(relative_path, &content, mtime)?;
+        }
+        Ok(())
+    }
+
+    pub fn delete_from_index(&self, relative_path: &str) -> Result<(), String> {
+        let lock = self.index.lock().map_err(|e| e.to_string())?;
+        if let Some(index) = lock.as_ref() {
+            index.delete_file(relative_path)?;
+        }
         Ok(())
     }
 }
@@ -1037,5 +1188,54 @@ mod tests {
         assert!(target_file.exists());
         let read_bytes = fs::read(&target_file).unwrap();
         assert_eq!(read_bytes, binary_payload);
+    }
+
+    #[test]
+    fn test_metadata_index_and_link_updating() {
+        let temp_dir = tempdir().unwrap();
+        let vault_dir = temp_dir.path().join("vault");
+        let recent_file = temp_dir.path().join("recents.json");
+
+        let manager = VaultManager::new(recent_file);
+        manager.set_current_vault(vault_dir.clone()).unwrap();
+
+        // 1. Create Note A with tags and headings
+        let note_a_content = r#"---
+tags: [rust, tauri]
+---
+# Main Heading
+Some text with #project/mobile.
+- [ ] Todo item
+Link to [[Note B|Alias B]] and #subtag."#;
+        manager.write_file_atomic("Note A.md", note_a_content).unwrap();
+
+        // 2. Create Note B
+        let note_b_content = "# Target Note\nThis note will receive backlinks.";
+        manager.write_file_atomic("Note B.md", note_b_content).unwrap();
+
+        // Check backlinks for Note B
+        let backlinks = manager.get_backlinks("Note B.md").unwrap();
+        assert_eq!(backlinks.linked_mentions.len(), 1);
+        assert_eq!(backlinks.linked_mentions[0].source_path, "Note A.md");
+        assert_eq!(backlinks.linked_mentions[0].alias, Some("Alias B".to_string()));
+
+        // Check tags
+        let tags = manager.get_tags().unwrap();
+        let tag_names: Vec<String> = tags.iter().map(|t| t.tag.clone()).collect();
+        assert!(tag_names.contains(&"rust".to_string()));
+        assert!(tag_names.contains(&"tauri".to_string()));
+        assert!(tag_names.contains(&"project/mobile".to_string()));
+
+        // Check outline of Note A
+        let outline = manager.get_outline("Note A.md").unwrap();
+        assert_eq!(outline.len(), 1);
+        assert_eq!(outline[0].text, "Main Heading");
+
+        // 3. Rename Note B to Note Renamed.md -> verify link in Note A gets auto-updated
+        manager.rename_item("Note B.md", "Note Renamed.md").unwrap();
+
+        let updated_a = manager.read_file("Note A.md").unwrap();
+        assert!(updated_a.contains("[[Note Renamed|Alias B]]"));
+        assert!(!updated_a.contains("[[Note B|Alias B]]"));
     }
 }

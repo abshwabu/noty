@@ -56,6 +56,12 @@ pub fn run() {
             commands::vault_write_snippet,
             commands::vault_write_binary,
             commands::vault_open_popout,
+            commands::vault_get_backlinks,
+            commands::vault_get_outgoing_links,
+            commands::vault_get_tags,
+            commands::vault_get_outline,
+            commands::vault_get_graph_data,
+            commands::vault_update_links_on_rename,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

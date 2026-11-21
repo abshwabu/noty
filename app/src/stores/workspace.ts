@@ -84,6 +84,7 @@ export const useWorkspaceStore = defineStore('workspace', {
   state: () => ({
     layout: createDefaultLayout(),
     isLoaded: false,
+    showGraphView: false,
     draggedTabInfo: null as { leafId: string; tabId: string } | null,
     draggedPanelId: null as SidebarPanelId | null,
   }),

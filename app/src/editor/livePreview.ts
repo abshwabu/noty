@@ -10,6 +10,9 @@ import { RangeSetBuilder } from '@codemirror/state';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import mermaid from 'mermaid';
+import { parseWikilinkInner, handleWikilinkClick } from './links';
+import { useVaultStore } from '../stores/vault';
+import { getActivePinia } from 'pinia';
 
 // Initialize mermaid
 mermaid.initialize({
@@ -60,6 +63,123 @@ class HorizontalRuleWidget extends WidgetType {
     const hr = document.createElement('hr');
     hr.className = 'cm-hr my-4 border-t border-[var(--background-modifier-border)] opacity-60';
     return hr;
+  }
+}
+
+class WikilinkWidget extends WidgetType {
+  constructor(
+    readonly target: string,
+    readonly displayText: string,
+    readonly isResolved: boolean,
+    readonly heading?: string
+  ) {
+    super();
+  }
+
+  eq(other: WikilinkWidget) {
+    return (
+      other.target === this.target &&
+      other.displayText === this.displayText &&
+      other.isResolved === this.isResolved &&
+      other.heading === this.heading
+    );
+  }
+
+  toDOM(): HTMLElement {
+    const a = document.createElement('span');
+    a.className = this.isResolved
+      ? 'cm-wikilink text-[var(--text-accent)] hover:underline cursor-pointer font-medium'
+      : 'cm-wikilink cm-link-unresolved text-[var(--text-muted)] opacity-70 hover:opacity-100 hover:text-[var(--text-accent)] underline decoration-dashed cursor-pointer font-medium';
+    a.textContent = this.displayText;
+    a.setAttribute('data-wikilink-target', this.target);
+    a.setAttribute('title', this.isResolved ? `Open ${this.target}` : `Create ${this.target}`);
+
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleWikilinkClick(this.target, this.isResolved, this.heading);
+    });
+
+    return a;
+  }
+}
+
+class EmbedWidget extends WidgetType {
+  constructor(readonly target: string) {
+    super();
+  }
+
+  eq(other: EmbedWidget) {
+    return other.target === this.target;
+  }
+
+  toDOM(): HTMLElement {
+    const ext = this.target.split('.').pop()?.toLowerCase();
+    const isImage = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext || '');
+    const isPdf = ext === 'pdf';
+
+    if (isImage) {
+      const imgWrap = document.createElement('div');
+      imgWrap.className = 'cm-embed-image my-3 flex justify-center';
+      const img = document.createElement('img');
+      img.src = this.target.startsWith('/') ? this.target : `/${this.target}`;
+      img.alt = this.target;
+      img.className = 'max-h-96 rounded border border-[var(--background-modifier-border)] object-contain shadow-sm';
+      imgWrap.appendChild(img);
+      return imgWrap;
+    }
+
+    if (isPdf) {
+      const pdfWrap = document.createElement('div');
+      pdfWrap.className =
+        'cm-embed-pdf my-3 p-3 bg-[var(--background-secondary)] rounded border border-[var(--background-modifier-border)] flex items-center justify-between';
+      pdfWrap.innerHTML = `
+        <div class="flex items-center gap-2">
+          <span class="px-1.5 py-0.5 rounded bg-red-950/80 text-red-300 font-mono text-[10px] font-bold">PDF</span>
+          <span class="text-xs text-[var(--text-normal)] font-medium">${this.target}</span>
+        </div>
+        <span class="text-[11px] text-[var(--text-muted)]">Embedded Document</span>
+      `;
+      return pdfWrap;
+    }
+
+    const noteWrap = document.createElement('div');
+    noteWrap.className =
+      'cm-embed-note my-3 p-3 bg-[var(--background-secondary-alt)] border-l-4 border-[var(--interactive-accent)] rounded-r cursor-pointer';
+    noteWrap.setAttribute('data-wikilink-target', this.target);
+    noteWrap.innerHTML = `
+      <div class="text-[11px] font-semibold text-[var(--text-accent)] mb-1 flex items-center gap-1.5">
+        <span>📄 Transclusion: ${this.target}</span>
+      </div>
+      <div class="text-xs text-[var(--text-muted)] italic">Click to view note [[${this.target}]]</div>
+    `;
+    noteWrap.addEventListener('click', () => {
+      handleWikilinkClick(this.target, true);
+    });
+    return noteWrap;
+  }
+}
+
+class MarkdownLinkWidget extends WidgetType {
+  constructor(readonly label: string, readonly url: string) {
+    super();
+  }
+
+  eq(other: MarkdownLinkWidget) {
+    return other.label === this.label && other.url === this.url;
+  }
+
+  toDOM(): HTMLElement {
+    const a = document.createElement('a');
+    a.className = 'cm-markdown-link text-[var(--text-accent)] hover:underline cursor-pointer font-medium';
+    a.textContent = this.label;
+    a.href = this.url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+    return a;
   }
 }
 
@@ -424,6 +544,79 @@ function collectInlineFormatting(
       from: start,
       to: end,
       deco: Decoration.replace({}),
+    });
+  }
+
+  // Embeds: ![[Note]] or ![[image.png]]
+  const embedRegex = /!\[\[([^\]]+)\]\]/g;
+  while ((match = embedRegex.exec(text)) !== null) {
+    const start = lineFrom + match.index;
+    const end = start + match[0].length;
+    queued.push({
+      from: start,
+      to: end,
+      deco: Decoration.replace({
+        widget: new EmbedWidget(match[1].trim()),
+      }),
+    });
+  }
+
+  // Wikilinks: [[Note]], [[Note|Alias]], [[Note#Heading]], [[Note#^block]]
+  const wikilinkRegex = /(?<!!)\[\[([^\]]+)\]\]/g;
+  const availableFiles = getActivePinia() ? useVaultStore().allFilePaths : [];
+
+  while ((match = wikilinkRegex.exec(text)) !== null) {
+    const start = lineFrom + match.index;
+    const end = start + match[0].length;
+    const parsed = parseWikilinkInner(match[1], false, availableFiles);
+
+    queued.push({
+      from: start,
+      to: end,
+      deco: Decoration.replace({
+        widget: new WikilinkWidget(
+          parsed.targetNote,
+          parsed.displayText,
+          parsed.isResolved,
+          parsed.heading
+        ),
+      }),
+    });
+  }
+
+  // Markdown links: [label](url)
+  const mdLinkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  while ((match = mdLinkRegex.exec(text)) !== null) {
+    const start = lineFrom + match.index;
+    const end = start + match[0].length;
+    queued.push({
+      from: start,
+      to: end,
+      deco: Decoration.replace({
+        widget: new MarkdownLinkWidget(match[1], match[2]),
+      }),
+    });
+  }
+
+  // Tags: #tag or #nested/tag
+  const tagRegex = /(?:^|\s)(#[a-zA-Z0-9_\-/]+)/g;
+  while ((match = tagRegex.exec(text)) !== null) {
+    const matchStr = match[1];
+    const matchIndex = match.index + (match[0].length - matchStr.length);
+    const start = lineFrom + matchIndex;
+    const end = start + matchStr.length;
+
+    // Ignore hex colors like #fff or #ffffff
+    if (/^#[0-9a-fA-F]{3,6}$/.test(matchStr)) {
+      continue;
+    }
+
+    queued.push({
+      from: start,
+      to: end,
+      deco: Decoration.mark({
+        class: 'cm-tag px-1 py-0.2 rounded bg-[var(--background-modifier-hover)] text-[var(--text-accent)] font-medium text-xs',
+      }),
     });
   }
 }

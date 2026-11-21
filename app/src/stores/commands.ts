@@ -530,7 +530,7 @@ export const useCommandStore = defineStore('commands', {
         section: 'View',
         defaultHotkeys: 'Ctrl+G',
         callback: () => {
-          workspace.openNote('Welcome.md');
+          workspace.showGraphView = true;
         },
       });
 
