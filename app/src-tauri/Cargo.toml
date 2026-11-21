@@ -22,9 +22,17 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+notify = "6"
+tempfile = "3"
+tauri-plugin-dialog = "2"
+vault_core = { path = "vault_core" }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.dev]
+# Reduces debug info to line tables only (retains panic file/line numbers while preventing gigabytes of debug bloat)
+debug = 1
+
 [profile.release]
 codegen-units = 1
 lto = true
