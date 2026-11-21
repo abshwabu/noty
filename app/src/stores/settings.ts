@@ -10,13 +10,15 @@ import type {
 } from '../types/workspace';
 
 const defaultEditorSettings: EditorSettings = {
-  defaultViewMode: 'edit',
+  defaultViewMode: 'live',
   lineNumbers: true,
   readableLineLength: true,
   autoPairBrackets: true,
   spellcheck: false,
   fontSize: 14,
   tabSize: 4,
+  vimMode: false,
+  foldHeadings: true,
 };
 
 const defaultFilesSettings: FilesLinksSettings = {

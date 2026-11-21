@@ -64,9 +64,18 @@ const backlinkCount = computed(() => {
       <span v-if="activeTab" class="hidden md:inline">{{ charCount }} characters</span>
 
       <!-- Mode indicator -->
-      <span class="px-1.5 py-0.5 rounded bg-[var(--background-modifier-hover)] text-[var(--text-normal)] text-[10px]">
-        Editing
-      </span>
+      <button
+        v-if="activeTab"
+        @click="() => {
+          if (!activeTab) return;
+          const current = activeTab.previewMode || 'live';
+          activeTab.previewMode = current === 'live' ? 'reading' : current === 'reading' ? 'source' : 'live';
+        }"
+        class="px-1.5 py-0.5 rounded bg-[var(--background-modifier-hover)] hover:bg-[var(--background-modifier-border)] text-[var(--text-normal)] text-[10px] cursor-pointer transition-colors"
+        title="Click to toggle view mode (Ctrl+E)"
+      >
+        {{ activeTab.previewMode === 'reading' ? 'Reading' : activeTab.previewMode === 'source' ? 'Source' : 'Live Preview' }}
+      </button>
 
       <!-- Right sidebar toggle -->
       <button

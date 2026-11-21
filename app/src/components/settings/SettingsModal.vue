@@ -180,6 +180,45 @@ const zoomPresets = [80, 90, 100, 110, 125, 150];
 
             <div class="flex items-center justify-between py-2 border-b border-[var(--background-modifier-border)]">
               <div>
+                <div class="font-medium text-sm">Fold headings & indent</div>
+                <div class="text-[var(--text-muted)] text-[11px]">Show folding arrows in the editor gutter for headings and lists.</div>
+              </div>
+              <input
+                type="checkbox"
+                v-model="settings.editor.foldHeadings"
+                @change="settings.saveSettings()"
+                class="w-4 h-4 accent-[var(--interactive-accent)]"
+              />
+            </div>
+
+            <div class="flex items-center justify-between py-2 border-b border-[var(--background-modifier-border)]">
+              <div>
+                <div class="font-medium text-sm">Spellcheck</div>
+                <div class="text-[var(--text-muted)] text-[11px]">Enable browser spellcheck highlight in editor.</div>
+              </div>
+              <input
+                type="checkbox"
+                v-model="settings.editor.spellcheck"
+                @change="settings.saveSettings()"
+                class="w-4 h-4 accent-[var(--interactive-accent)]"
+              />
+            </div>
+
+            <div class="flex items-center justify-between py-2 border-b border-[var(--background-modifier-border)]">
+              <div>
+                <div class="font-medium text-sm">Vim keybindings</div>
+                <div class="text-[var(--text-muted)] text-[11px]">Enable modal Vim keybindings for navigation and editing.</div>
+              </div>
+              <input
+                type="checkbox"
+                v-model="settings.editor.vimMode"
+                @change="settings.saveSettings()"
+                class="w-4 h-4 accent-[var(--interactive-accent)]"
+              />
+            </div>
+
+            <div class="flex items-center justify-between py-2 border-b border-[var(--background-modifier-border)]">
+              <div>
                 <div class="font-medium text-sm">Font size</div>
                 <div class="text-[var(--text-muted)] text-[11px]">Editor text size in pixels.</div>
               </div>

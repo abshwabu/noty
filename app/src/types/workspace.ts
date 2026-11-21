@@ -15,12 +15,14 @@ export interface SidebarState {
   panels: SidebarPanelId[];
 }
 
+export type EditorViewMode = 'source' | 'live' | 'reading' | 'edit';
+
 export interface WorkspaceTab {
   id: string;
   path: string;
   title: string;
   isPinned: boolean;
-  previewMode?: 'edit' | 'reading';
+  previewMode?: EditorViewMode;
 }
 
 export interface WorkspaceLeaf {
@@ -51,13 +53,15 @@ export interface WorkspaceLayout {
 }
 
 export interface EditorSettings {
-  defaultViewMode: 'edit' | 'reading';
+  defaultViewMode: 'source' | 'live' | 'reading' | 'edit';
   lineNumbers: boolean;
   readableLineLength: boolean;
   autoPairBrackets: boolean;
   spellcheck: boolean;
   fontSize: number;
   tabSize: number;
+  vimMode?: boolean;
+  foldHeadings?: boolean;
 }
 
 export interface FilesLinksSettings {

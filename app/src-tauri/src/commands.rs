@@ -260,6 +260,16 @@ pub async fn vault_write_snippet(
 }
 
 #[tauri::command]
+pub async fn vault_write_binary(
+    relative_path: String,
+    data_bytes: Vec<u8>,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    state.vault_manager.write_file_binary(&relative_path, &data_bytes)?;
+    Ok(true)
+}
+
+#[tauri::command]
 pub async fn vault_open_popout(
     path: String,
     title: String,

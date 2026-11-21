@@ -450,6 +450,52 @@ impl VaultManager {
         Ok(())
     }
 
+    pub fn write_file_binary(&self, relative_path: &str, data: &[u8]) -> Result<(), String> {
+        let target_path = self.resolve_relative_path(relative_path)?;
+        let parent = target_path
+            .parent()
+            .ok_or_else(|| "Invalid target file path".to_string())?;
+
+        if !parent.exists() {
+            fs::create_dir_all(parent).map_err(|e| format!("Failed to create parent directories: {}", e))?;
+        }
+
+        let filename = target_path
+            .file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or("temp");
+        let now_millis = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let temp_path = parent.join(format!(".tmp_{}_{}", filename, now_millis));
+
+        {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temp_path)
+                .map_err(|e| format!("Failed to create temporary file: {}", e))?;
+
+            file.write_all(data)
+                .map_err(|e| format!("Failed to write binary content to temp file: {}", e))?;
+
+            file.sync_all()
+                .map_err(|e| format!("Failed to sync temporary file: {}", e))?;
+        }
+
+        self.mark_own_write(&target_path);
+
+        fs::rename(&temp_path, &target_path).map_err(|e| {
+            let _ = fs::remove_file(&temp_path);
+            format!("Failed to rename temp file to destination: {}", e)
+        })?;
+
+        self.mark_own_write(&target_path);
+
+        Ok(())
+    }
+
     pub fn create_file(&self, relative_path: &str, initial_content: Option<&str>) -> Result<String, String> {
         let full_path = self.resolve_relative_path(relative_path)?;
         if full_path.exists() {
@@ -973,5 +1019,23 @@ mod tests {
 
         let content = manager.read_snippet("custom-theme").unwrap();
         assert_eq!(content, ".cm-editor { color: red; }");
+    }
+
+    #[test]
+    fn test_write_file_binary() {
+        let temp_dir = tempdir().unwrap();
+        let vault_dir = temp_dir.path().join("vault");
+        let recent_file = temp_dir.path().join("recents.json");
+
+        let manager = VaultManager::new(recent_file);
+        manager.set_current_vault(vault_dir.clone()).unwrap();
+
+        let binary_payload = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x01];
+        manager.write_file_binary("attachments/test_image.png", &binary_payload).unwrap();
+
+        let target_file = vault_dir.join("attachments").join("test_image.png");
+        assert!(target_file.exists());
+        let read_bytes = fs::read(&target_file).unwrap();
+        assert_eq!(read_bytes, binary_payload);
     }
 }

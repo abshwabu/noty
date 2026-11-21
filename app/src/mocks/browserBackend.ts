@@ -35,7 +35,60 @@ export function setupBrowserMockBackend() {
   const filesMap = new Map<string, string>([
     [
       'Welcome.md',
-      '# Welcome to Noty 🚀\n\nNoty is an offline-first Obsidian-compatible markdown notes app built with **Tauri 2 + Vue 3**.\n\n### Key Features:\n- **Vault System**: Works with standard `.md` files and attachments.\n- **Obsidian Compatibility**: Discovers `.obsidian` configurations, attachment folders, and themes.\n- **Atomic Writes**: Safe temp-file writes preserving UTF-8 and line endings (LF/CRLF).\n- **Restorable Trash**: Items moved to `.trash` can be restored to their original paths.\n- **Drag & Drop**: Easily rearrange notes and folders in the sidebar.\n',
+      `---
+title: Welcome to Noty
+tags: [obsidian, tauri, markdown, editor]
+created: 2026-11-21
+rating: 5
+published: true
+---
+
+# Welcome to Noty 🚀
+
+Noty is an offline-first Obsidian-compatible markdown notes app built with **Tauri 2 + Vue 3** and **CodeMirror 6**.
+
+> [!tip] Three Editor Modes
+> Toggle between **Live Preview**, **Source mode**, and **Reading view** using the mode switcher in the header or by pressing ==Ctrl+E==.
+
+### Interactive Tasks
+- [x] CodeMirror 6 editor engine
+- [x] Live Preview mode (markdown syntax hidden when cursor outside)
+- [x] Frontmatter YAML properties editor
+- [ ] Try creating your first note with Ctrl+N
+
+### Math Formulas (KaTeX)
+Here is an inline formula: $E = mc^2$ and Euler's identity: $e^{i\\pi} + 1 = 0$.
+
+Display math block:
+$$
+\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}
+$$
+
+### Flowchart (Mermaid)
+\`\`\`mermaid
+flowchart LR
+    A[Vault Folder] --> B[Rust Core]
+    B --> C[Tauri 2 IPC]
+    C --> D[CodeMirror 6]
+    D --> E[Live Preview]
+\`\`\`
+
+### Formatted Table
+| Feature | Supported | Notes |
+| ------- | --------- | ----- |
+| Live Preview | Yes | Obsidian-grade |
+| Frontmatter UI | Yes | YAML sync |
+| Vim Mode | Yes | Modal editing |
+| KaTeX Math | Yes | Inline & Block |
+
+### Formatting Demo
+- **Bold text**, *italic text*, ~~strikethrough~~, ==highlighted text==, and \`inline code\`.
+- Footnote reference[^1] demo.
+%% Hidden internal comment %%
+
+---
+[^1]: Noty is designed to run smoothly on desktop and mobile.
+`,
     ],
     [
       'Obsidian Import.md',
@@ -181,6 +234,11 @@ export function setupBrowserMockBackend() {
 
       case 'vault_write_file': {
         filesMap.set(args.relativePath, args.content);
+        return true;
+      }
+
+      case 'vault_write_binary': {
+        filesMap.set(args.relativePath, `[binary file: ${args.dataBytes?.length || 0} bytes]`);
         return true;
       }
 
