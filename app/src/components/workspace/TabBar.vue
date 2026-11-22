@@ -58,6 +58,43 @@ function handleTabContextMenu(tab: WorkspaceTab, e: MouseEvent) {
   };
 }
 
+// Touch long-press context menu for tablet & mobile
+let tabTouchTimer: ReturnType<typeof setTimeout> | null = null;
+let tabTouchStartX = 0;
+let tabTouchStartY = 0;
+
+function handleTabTouchStart(tab: WorkspaceTab, e: TouchEvent) {
+  if (e.touches.length !== 1) return;
+  tabTouchStartX = e.touches[0].clientX;
+  tabTouchStartY = e.touches[0].clientY;
+
+  tabTouchTimer = setTimeout(() => {
+    contextMenuState.value = {
+      show: true,
+      x: tabTouchStartX,
+      y: tabTouchStartY,
+      tab,
+    };
+    tabTouchTimer = null;
+  }, 500);
+}
+
+function handleTabTouchMove(e: TouchEvent) {
+  if (!tabTouchTimer) return;
+  const touch = e.touches[0];
+  if (Math.abs(touch.clientX - tabTouchStartX) > 10 || Math.abs(touch.clientY - tabTouchStartY) > 10) {
+    clearTimeout(tabTouchTimer);
+    tabTouchTimer = null;
+  }
+}
+
+function handleTabTouchEnd() {
+  if (tabTouchTimer) {
+    clearTimeout(tabTouchTimer);
+    tabTouchTimer = null;
+  }
+}
+
 function handleTabAction(action: string) {
   const tab = contextMenuState.value.tab;
   if (!tab) return;
@@ -175,6 +212,10 @@ function handleDrop(targetIndex?: number) {
         @drop.stop="handleDrop(index)"
         @click="handleTabClick(tab)"
         @contextmenu="(e) => handleTabContextMenu(tab, e)"
+        @touchstart="handleTabTouchStart(tab, $event)"
+        @touchmove="handleTabTouchMove"
+        @touchend="handleTabTouchEnd"
+        @touchcancel="handleTabTouchEnd"
         class="group relative flex items-center gap-1.5 px-3 py-1 rounded-t text-xs cursor-pointer transition-all border-t-2 shrink-0 max-w-48"
         :class="[
           tab.id === leaf.activeTabId

@@ -20,7 +20,7 @@ import {
   highlightActiveLineGutter,
 } from '@codemirror/view';
 import { markdown } from '@codemirror/lang-markdown';
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, undo, redo } from '@codemirror/commands';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { codeFolding, foldGutter, foldKeymap } from '@codemirror/language';
 import { vim } from '@replit/codemirror-vim';
@@ -747,22 +747,72 @@ function onOpenInNoteFind(e: any) {
   openFind(replace);
 }
 
+function onInsertLinePrefix(e: any) {
+  if (!editorView || isImageAttachment.value || currentMode.value === 'reading') return;
+  const prefix = e.detail?.prefix || '';
+  const state = editorView.state;
+  const line = state.doc.lineAt(state.selection.main.head);
+  editorView.dispatch({
+    changes: { from: line.from, to: line.from, insert: prefix },
+  });
+  editorView.focus();
+}
+
+function onEditorUndo() {
+  if (editorView) undo(editorView);
+}
+
+function onEditorRedo() {
+  if (editorView) redo(editorView);
+}
+
+// Background-safe flush when Android/browser pauses or backgrounds app
+function handleAppPauseFlush() {
+  if (editorView && activePath.value) {
+    const currentDoc = editorView.state.doc.toString();
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer);
+      saveDebounceTimer = null;
+    }
+    saveFileContent(currentDoc);
+  }
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === 'hidden') {
+    handleAppPauseFlush();
+  }
+}
+
 onMounted(() => {
   window.addEventListener('noty:format-selection', onFormatSelection);
+  window.addEventListener('noty:insert-line-prefix', onInsertLinePrefix);
+  window.addEventListener('noty:editor-undo', onEditorUndo);
+  window.addEventListener('noty:editor-redo', onEditorRedo);
   window.addEventListener('noty:toggle-task', onToggleTask);
   window.addEventListener('noty:indent-line', onIndentLine);
   window.addEventListener('noty:open-in-note-find', onOpenInNoteFind);
   window.addEventListener('noty:insert-text', onInsertText);
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('pagehide', handleAppPauseFlush);
+  window.addEventListener('beforeunload', handleAppPauseFlush);
   loadFileContent();
 });
 
 onUnmounted(() => {
   window.removeEventListener('noty:format-selection', onFormatSelection);
+  window.removeEventListener('noty:insert-line-prefix', onInsertLinePrefix);
+  window.removeEventListener('noty:editor-undo', onEditorUndo);
+  window.removeEventListener('noty:editor-redo', onEditorRedo);
   window.removeEventListener('noty:toggle-task', onToggleTask);
   window.removeEventListener('noty:indent-line', onIndentLine);
   window.removeEventListener('noty:open-in-note-find', onOpenInNoteFind);
   window.removeEventListener('noty:insert-text', onInsertText);
+  document.removeEventListener('visibilitychange', onVisibilityChange);
+  window.removeEventListener('pagehide', handleAppPauseFlush);
+  window.removeEventListener('beforeunload', handleAppPauseFlush);
   if (activePath.value && editorView) {
+    handleAppPauseFlush();
     setCachedEditorState(activePath.value, editorView.state);
     editorView.destroy();
     editorView = null;

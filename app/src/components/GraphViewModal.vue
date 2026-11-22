@@ -497,6 +497,47 @@ function handleWheel(e: WheelEvent) {
   zoom.value = newZoom;
 }
 
+// Mobile Pinch-to-zoom & Touch Pan
+let touchPinchDist = 0;
+let initialTouchZoom = 1;
+let touchPanStartX = 0;
+let touchPanStartY = 0;
+
+function handleTouchStart(e: TouchEvent) {
+  if (e.touches.length === 2) {
+    const t1 = e.touches[0];
+    const t2 = e.touches[1];
+    touchPinchDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+    initialTouchZoom = zoom.value;
+  } else if (e.touches.length === 1) {
+    isPanning = true;
+    touchPanStartX = e.touches[0].clientX - panX.value;
+    touchPanStartY = e.touches[0].clientY - panY.value;
+  }
+}
+
+function handleTouchMove(e: TouchEvent) {
+  if (e.touches.length === 2 && touchPinchDist > 0) {
+    const t1 = e.touches[0];
+    const t2 = e.touches[1];
+    const currentDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+    const scale = currentDist / touchPinchDist;
+    zoom.value = Math.min(3.5, Math.max(0.2, initialTouchZoom * scale));
+  } else if (e.touches.length === 1 && isPanning) {
+    panX.value = e.touches[0].clientX - touchPanStartX;
+    panY.value = e.touches[0].clientY - touchPanStartY;
+  }
+}
+
+function handleTouchEnd(e: TouchEvent) {
+  if (e.touches.length < 2) {
+    touchPinchDist = 0;
+  }
+  if (e.touches.length === 0) {
+    isPanning = false;
+  }
+}
+
 function resetZoom() {
   zoom.value = 1.0;
   panX.value = 0;
@@ -653,6 +694,9 @@ onUnmounted(() => {
             @mousemove="handleMouseMove"
             @mouseup="handleMouseUp"
             @wheel="handleWheel"
+            @touchstart="handleTouchStart"
+            @touchmove="handleTouchMove"
+            @touchend="handleTouchEnd"
           ></canvas>
 
           <!-- Instructions Hint -->

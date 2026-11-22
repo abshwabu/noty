@@ -36,6 +36,21 @@ const totalMatches = computed(() => searchResponse.value?.total_matches || 0);
 const totalFiles = computed(() => searchResponse.value?.total_files || 0);
 const queryTime = computed(() => searchResponse.value?.duration_ms || 0);
 
+// Performance / Chunked virtual rendering for mobile devices
+const displayLimit = ref(50);
+const visibleResults = computed(() => {
+  return results.value.slice(0, displayLimit.value);
+});
+
+function handleResultsScroll(e: Event) {
+  const el = e.target as HTMLElement;
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 150) {
+    if (displayLimit.value < results.value.length) {
+      displayLimit.value += 50;
+    }
+  }
+}
+
 let searchDebounceTimer: any = null;
 
 async function executeSearch() {
@@ -317,9 +332,13 @@ function escapeHtml(str: string): string {
     </div>
 
     <!-- Results list -->
-    <div v-else-if="results.length > 0" class="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
+    <div
+      v-else-if="results.length > 0"
+      class="flex-1 overflow-y-auto space-y-1.5 pr-0.5"
+      @scroll="handleResultsScroll"
+    >
       <div
-        v-for="res in results"
+        v-for="res in visibleResults"
         :key="res.file_path"
         class="border border-[var(--background-modifier-border)] rounded-md bg-[var(--background-secondary-alt)] overflow-hidden transition-all"
       >
@@ -381,6 +400,13 @@ function escapeHtml(str: string): string {
             </div>
           </div>
         </div>
+      </div>
+
+      <div
+        v-if="displayLimit < results.length"
+        class="text-center py-2 text-[11px] text-[var(--text-faint)]"
+      >
+        Showing {{ visibleResults.length }} of {{ results.length }} notes...
       </div>
     </div>
 

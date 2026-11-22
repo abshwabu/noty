@@ -1,10 +1,27 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { WorkspaceNode } from '../../types/workspace';
+import { useDeviceStore } from '../../stores/device';
+import { useWorkspaceStore } from '../../stores/workspace';
 import WorkspacePane from './WorkspacePane.vue';
 
 const props = defineProps<{
   node: WorkspaceNode;
 }>();
+
+const deviceStore = useDeviceStore();
+const workspace = useWorkspaceStore();
+
+// On mobile, find the active child leaf or default to the first child for single-pane mode
+const activeMobileChild = computed(() => {
+  if (props.node.type !== 'split') return null;
+  const activeLeafId = workspace.layout.activeLeafId;
+  const containsActiveLeaf = (child: WorkspaceNode): boolean => {
+    if (child.type === 'leaf') return child.id === activeLeafId;
+    return child.children?.some(containsActiveLeaf) || false;
+  };
+  return props.node.children.find(containsActiveLeaf) || props.node.children[0];
+});
 
 function startSplitResize(index: number, e: MouseEvent) {
   if (props.node.type !== 'split') return;
@@ -41,7 +58,15 @@ function startSplitResize(index: number, e: MouseEvent) {
     class="flex-1 min-w-0 min-h-0"
   />
 
-  <!-- If Split: Render Flex Container with Resizers -->
+  <!-- If Split on Mobile: Single-pane mode displays only the active child -->
+  <div
+    v-else-if="node.type === 'split' && deviceStore.isMobile"
+    class="h-full w-full flex-1 flex flex-col overflow-hidden"
+  >
+    <WorkspaceSplitView v-if="activeMobileChild" :node="activeMobileChild" />
+  </div>
+
+  <!-- If Split on Desktop: Render Flex Container with Resizers -->
   <div
     v-else-if="node.type === 'split'"
     class="h-full w-full flex overflow-hidden"

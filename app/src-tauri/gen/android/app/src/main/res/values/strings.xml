@@ -1,4 +1,8 @@
 <resources>
-    <string name="app_name">"app"</string>
-    <string name="main_activity_title">"app"</string>
+    <string name="app_name">"Noty"</string>
+    <string name="main_activity_title">"Noty"</string>
+    <string name="shortcut_new_note_short">"New Note"</string>
+    <string name="shortcut_new_note_long">"Create a new note"</string>
+    <string name="shortcut_daily_note_short">"Daily Note"</string>
+    <string name="shortcut_daily_note_long">"Open today's daily note"</string>
 </resources>

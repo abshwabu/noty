@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useWorkspaceStore } from '../../stores/workspace';
+import { useDeviceStore } from '../../stores/device';
 import type { WorkspaceLeaf } from '../../types/workspace';
 import TabBar from './TabBar.vue';
 import NoteEditor from '../NoteEditor.vue';
@@ -12,6 +13,7 @@ const props = defineProps<{
 }>();
 
 const workspace = useWorkspaceStore();
+const deviceStore = useDeviceStore();
 
 const isActiveLeaf = computed(() => workspace.layout.activeLeafId === props.leaf.id);
 
@@ -32,8 +34,8 @@ function handlePaneClick() {
     ]"
     @click="handlePaneClick"
   >
-    <!-- Tab Bar -->
-    <TabBar :leaf="leaf" />
+    <!-- Tab Bar (Shown on desktop & tablet; replaced by MobileHeader on phones) -->
+    <TabBar v-if="!deviceStore.isMobile" :leaf="leaf" />
 
     <!-- Pane Content View -->
     <div class="flex-1 overflow-hidden relative">

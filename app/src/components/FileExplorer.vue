@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useVaultStore } from '../stores/vault';
 import type { SortOption } from '../types/vault';
 import FileTreeItem from './FileTreeItem.vue';
@@ -13,9 +13,71 @@ import {
   Search,
   X,
   ChevronDown,
+  RefreshCw,
 } from 'lucide-vue-next';
 
 const store = useVaultStore();
+
+// Pull-to-refresh & Touch state
+const isPulling = ref(false);
+const pullDistance = ref(0);
+const isRefreshing = ref(false);
+let pullStartY = 0;
+const treeContainerRef = ref<HTMLElement | null>(null);
+
+function handleTreeTouchStart(e: TouchEvent) {
+  if (!treeContainerRef.value || treeContainerRef.value.scrollTop > 5) return;
+  pullStartY = e.touches[0].clientY;
+  isPulling.value = true;
+}
+
+function handleTreeTouchMove(e: TouchEvent) {
+  if (!isPulling.value || !treeContainerRef.value || treeContainerRef.value.scrollTop > 5) {
+    pullDistance.value = 0;
+    return;
+  }
+  const currentY = e.touches[0].clientY;
+  const diff = currentY - pullStartY;
+  if (diff > 0) {
+    pullDistance.value = Math.min(diff * 0.45, 80);
+  } else {
+    pullDistance.value = 0;
+  }
+}
+
+async function handleTreeTouchEnd() {
+  if (pullDistance.value >= 50 && !isRefreshing.value) {
+    isRefreshing.value = true;
+    pullDistance.value = 45;
+    try {
+      await store.refreshTree();
+    } finally {
+      setTimeout(() => {
+        isRefreshing.value = false;
+        pullDistance.value = 0;
+        isPulling.value = false;
+      }, 350);
+    }
+  } else {
+    pullDistance.value = 0;
+    isPulling.value = false;
+  }
+}
+
+// Lazy virtual chunk rendering for large file trees on mobile
+const displayLimit = ref(150);
+const visibleNodes = computed(() => {
+  return store.sortedFileTree.slice(0, displayLimit.value);
+});
+
+function handleTreeScroll(e: Event) {
+  const el = e.target as HTMLElement;
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 120) {
+    if (displayLimit.value < store.sortedFileTree.length) {
+      displayLimit.value += 100;
+    }
+  }
+}
 
 // Context menu state
 const contextMenuState = ref<{
@@ -260,22 +322,45 @@ async function handleRootDrop(e: DragEvent) {
       </div>
     </div>
 
-    <!-- File Tree List -->
+    <!-- File Tree List (with pull-to-refresh & lazy chunking) -->
     <div
+      ref="treeContainerRef"
       class="flex-1 overflow-y-auto px-1 py-1 relative"
+      @touchstart="handleTreeTouchStart"
+      @touchmove="handleTreeTouchMove"
+      @touchend="handleTreeTouchEnd"
+      @scroll="handleTreeScroll"
       @dragover="handleRootDragOver"
       @dragleave="isRootDragOver = false"
       @drop="handleRootDrop"
     >
+      <!-- Pull-to-refresh indicator -->
+      <div
+        v-if="pullDistance > 0 || isRefreshing"
+        class="flex items-center justify-center transition-all overflow-hidden"
+        :style="{ height: `${pullDistance}px` }"
+      >
+        <div class="flex items-center gap-2 text-xs text-[var(--text-muted)] py-1">
+          <RefreshCw class="w-3.5 h-3.5 text-[var(--interactive-accent)]" :class="{ 'animate-spin': isRefreshing }" />
+          <span>{{ isRefreshing ? 'Refreshing vault...' : 'Pull down to refresh' }}</span>
+        </div>
+      </div>
+
       <!-- Tree Nodes -->
-      <template v-if="store.sortedFileTree.length > 0">
+      <template v-if="visibleNodes.length > 0">
         <FileTreeItem
-          v-for="node in store.sortedFileTree"
+          v-for="node in visibleNodes"
           :key="node.id"
           :node="node"
           @context-menu="handleContextMenu"
           @inline-create="(ev) => openCreationModal(ev.parentRelPath, ev.isDir)"
         />
+        <div
+          v-if="displayLimit < store.sortedFileTree.length"
+          class="text-center py-2 text-[11px] text-[var(--text-faint)]"
+        >
+          Showing {{ visibleNodes.length }} of {{ store.sortedFileTree.length }} items...
+        </div>
       </template>
 
       <!-- Empty State -->

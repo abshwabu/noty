@@ -67,6 +67,44 @@ function handleContextMenu(e: MouseEvent) {
   });
 }
 
+// Touch long-press context menu detection for Android / mobile
+let touchTimer: ReturnType<typeof setTimeout> | null = null;
+let touchStartX = 0;
+let touchStartY = 0;
+
+function handleTouchStart(e: TouchEvent) {
+  if (e.touches.length !== 1) return;
+  const touch = e.touches[0];
+  touchStartX = touch.clientX;
+  touchStartY = touch.clientY;
+
+  touchTimer = setTimeout(() => {
+    emit('context-menu', {
+      x: touchStartX,
+      y: touchStartY,
+      isFolder: props.node.is_dir,
+      relativePath: props.node.relative_path,
+    });
+    touchTimer = null;
+  }, 500);
+}
+
+function handleTouchMove(e: TouchEvent) {
+  if (!touchTimer) return;
+  const touch = e.touches[0];
+  if (Math.abs(touch.clientX - touchStartX) > 10 || Math.abs(touch.clientY - touchStartY) > 10) {
+    clearTimeout(touchTimer);
+    touchTimer = null;
+  }
+}
+
+function handleTouchEnd() {
+  if (touchTimer) {
+    clearTimeout(touchTimer);
+    touchTimer = null;
+  }
+}
+
 function startRename() {
   editName.value = props.node.name;
   isEditing.value = true;
@@ -146,7 +184,7 @@ defineExpose({
   <div class="file-tree-item select-none text-[13px]">
     <!-- Row Item -->
     <div
-      class="group flex items-center gap-1.5 px-2 py-1 my-0.5 rounded cursor-pointer transition-colors relative"
+      class="group flex items-center gap-1.5 px-2 py-1 my-0.5 rounded cursor-pointer transition-colors relative min-h-[38px] md:min-h-0"
       :class="[
         isActive
           ? 'bg-purple-600/25 text-purple-300 font-medium'
@@ -157,6 +195,10 @@ defineExpose({
       draggable="true"
       @click="handleClick"
       @contextmenu="handleContextMenu"
+      @touchstart="handleTouchStart"
+      @touchmove="handleTouchMove"
+      @touchend="handleTouchEnd"
+      @touchcancel="handleTouchEnd"
       @dragstart="handleDragStart"
       @dragover="handleDragOver"
       @dragleave="handleDragLeave"

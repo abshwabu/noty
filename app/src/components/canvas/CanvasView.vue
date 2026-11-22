@@ -127,6 +127,51 @@ function handleWheel(e: WheelEvent) {
   zoom.value = newZoom;
 }
 
+// Touch Pinch-to-zoom & Touch Pan for Android / Mobile
+let touchStartDist = 0;
+let initialZoom = 1;
+let touchPanStart = { x: 0, y: 0 };
+
+function handleTouchStart(e: TouchEvent) {
+  if (e.touches.length === 2) {
+    const t1 = e.touches[0];
+    const t2 = e.touches[1];
+    touchStartDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+    initialZoom = zoom.value;
+  } else if (e.touches.length === 1) {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('canvas-background') || target.tagName === 'svg') {
+      isPanning.value = true;
+      touchPanStart = {
+        x: e.touches[0].clientX - panX.value,
+        y: e.touches[0].clientY - panY.value,
+      };
+    }
+  }
+}
+
+function handleTouchMove(e: TouchEvent) {
+  if (e.touches.length === 2 && touchStartDist > 0) {
+    const t1 = e.touches[0];
+    const t2 = e.touches[1];
+    const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+    const scale = dist / touchStartDist;
+    zoom.value = Math.min(Math.max(initialZoom * scale, 0.2), 3.0);
+  } else if (e.touches.length === 1 && isPanning.value) {
+    panX.value = e.touches[0].clientX - touchPanStart.x;
+    panY.value = e.touches[0].clientY - touchPanStart.y;
+  }
+}
+
+function handleTouchEnd(e: TouchEvent) {
+  if (e.touches.length < 2) {
+    touchStartDist = 0;
+  }
+  if (e.touches.length === 0) {
+    isPanning.value = false;
+  }
+}
+
 function handleMouseDownBackground(e: MouseEvent) {
   // Only pan if clicking on empty canvas background
   const target = e.target as HTMLElement;
@@ -388,6 +433,9 @@ watch(() => props.path, () => {
     @mousedown="handleMouseDownBackground"
     @mousemove="handleMouseMove"
     @mouseup="handleMouseUp"
+    @touchstart.passive="handleTouchStart"
+    @touchmove="handleTouchMove"
+    @touchend="handleTouchEnd"
   >
     <!-- Background grid -->
     <div

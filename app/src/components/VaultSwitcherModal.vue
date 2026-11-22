@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useVaultStore } from '../stores/vault';
+import { exportVaultToZip, importVaultFromZip, triggerFileDownload } from '../services/vaultStorage';
 import {
   FolderOpen,
   PlusCircle,
@@ -10,12 +11,47 @@ import {
   CheckCircle2,
   Folder,
   Sparkles,
+  Upload,
+  Download,
 } from 'lucide-vue-next';
 
 const store = useVaultStore();
 
 const newVaultName = ref('');
 const isCreating = ref(false);
+const zipStatus = ref<string | null>(null);
+
+async function handleZipUpload(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  zipStatus.value = 'Importing ZIP...';
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const res = await importVaultFromZip(arrayBuffer);
+    zipStatus.value = `Imported ${res.importedCount} files from ZIP!`;
+    setTimeout(() => {
+      zipStatus.value = null;
+      store.showVaultSwitcher = false;
+    }, 1200);
+  } catch (err: any) {
+    zipStatus.value = `Import failed: ${err.message || String(err)}`;
+  }
+}
+
+async function handleZipExport() {
+  zipStatus.value = 'Creating ZIP backup...';
+  try {
+    const blob = await exportVaultToZip();
+    const vaultName = store.currentVault?.name || 'vault';
+    triggerFileDownload(blob, `${vaultName}-backup.zip`);
+    zipStatus.value = 'ZIP downloaded!';
+    setTimeout(() => { zipStatus.value = null; }, 1500);
+  } catch (err: any) {
+    zipStatus.value = `Export failed: ${err.message || String(err)}`;
+  }
+}
 
 async function handleOpenPicker() {
   await store.pickAndOpenVault();
@@ -119,6 +155,35 @@ function formatDate(timestamp: number): string {
               </button>
             </form>
           </div>
+        </div>
+
+        <!-- ZIP Import & Export (Mobile & Desktop) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <label class="flex items-center gap-3 p-3 rounded-lg border border-[#3f3f46] bg-[#272730] hover:bg-[#2e2e3a] cursor-pointer transition-colors text-xs text-zinc-200">
+            <Upload class="w-4 h-4 text-purple-400 shrink-0" />
+            <div class="truncate">
+              <span class="font-semibold block">Import Vault from ZIP</span>
+              <span class="text-[10px] text-zinc-400">Restore or import notes</span>
+            </div>
+            <input type="file" accept=".zip" class="hidden" @change="handleZipUpload" />
+          </label>
+
+          <button
+            v-if="store.hasActiveVault"
+            @click="handleZipExport"
+            class="flex items-center gap-3 p-3 rounded-lg border border-[#3f3f46] bg-[#272730] hover:bg-[#2e2e3a] transition-colors text-xs text-zinc-200 text-left"
+          >
+            <Download class="w-4 h-4 text-purple-400 shrink-0" />
+            <div class="truncate">
+              <span class="font-semibold block">Export Vault as ZIP</span>
+              <span class="text-[10px] text-zinc-400">Download offline backup</span>
+            </div>
+          </button>
+        </div>
+
+        <!-- Status Notification -->
+        <div v-if="zipStatus" class="p-2.5 rounded bg-purple-950/60 border border-purple-800 text-purple-300 text-xs text-center font-medium animate-in fade-in">
+          {{ zipStatus }}
         </div>
 
         <!-- Recent Vaults List -->
