@@ -3,6 +3,16 @@ import { invoke } from '@tauri-apps/api/core';
 import { useVaultStore } from './vault';
 import { useWorkspaceStore } from './workspace';
 import { useSettingsStore } from './settings';
+import { useBookmarksStore } from './bookmarks';
+import { openOrCreateDailyNote, navigateDailyNote } from '../services/dailyNotes';
+import { openRandomNote } from '../services/randomNote';
+import { createZettelkastenNote } from '../services/zettelkasten';
+import { exportNoteToHtml, exportNoteToPdf } from '../services/exportNote';
+import {
+  convertMarkdownLinksToWikilinks,
+  convertWikilinksToMarkdownLinks,
+  convertHtmlFormattingToMarkdown,
+} from '../services/converter';
 
 export interface AppCommand {
   id: string;
@@ -510,16 +520,220 @@ export const useCommandStore = defineStore('commands', {
         section: 'File',
         defaultHotkeys: 'Ctrl+Alt+D',
         callback: async () => {
-          const today = new Date().toISOString().split('T')[0];
-          const fileName = `${today}.md`;
-          let existing = vault.activeFilePath === fileName;
-          if (!existing) {
-            // Check if file exists in file tree
-            const found = vault.fileTree.some((f) => f.name === fileName);
-            if (!found) {
-              await vault.createFile('', today);
-            }
-            workspace.openNote(fileName, { newTab: true });
+          await openOrCreateDailyNote(new Date());
+        },
+      });
+
+      this.registerCommand({
+        id: 'daily-notes:prev',
+        name: 'Open previous daily note',
+        section: 'File',
+        defaultHotkeys: '',
+        callback: async () => {
+          await navigateDailyNote(-1);
+        },
+      });
+
+      this.registerCommand({
+        id: 'daily-notes:next',
+        name: 'Open next daily note',
+        section: 'File',
+        defaultHotkeys: '',
+        callback: async () => {
+          await navigateDailyNote(1);
+        },
+      });
+
+      this.registerCommand({
+        id: 'daily-notes:calendar',
+        name: 'Open daily notes calendar',
+        section: 'Navigation',
+        defaultHotkeys: '',
+        callback: () => {
+          workspace.showCalendarModal = true;
+        },
+      });
+
+      this.registerCommand({
+        id: 'templates:insert',
+        name: 'Insert template',
+        section: 'Editor',
+        defaultHotkeys: 'Ctrl+T',
+        callback: () => {
+          workspace.showTemplatesModal = true;
+        },
+      });
+
+      this.registerCommand({
+        id: 'bookmarks:bookmark-active',
+        name: 'Bookmark active note',
+        section: 'File',
+        defaultHotkeys: '',
+        callback: () => {
+          const bookmarks = useBookmarksStore();
+          if (workspace.activeNotePath) {
+            bookmarks.toggleFileBookmark(workspace.activeNotePath);
+          }
+        },
+      });
+
+      this.registerCommand({
+        id: 'canvas:new',
+        name: 'Create new canvas',
+        section: 'File',
+        defaultHotkeys: 'Ctrl+Shift+C',
+        callback: async () => {
+          const name = 'Untitled Canvas.canvas';
+          const initial = JSON.stringify({ nodes: [], edges: [] }, null, 2);
+          await invoke('vault_write_file', { relativePath: name, content: initial });
+          await vault.refreshTree();
+          workspace.openNote(name, { newTab: true });
+        },
+      });
+
+      this.registerCommand({
+        id: 'bases:new',
+        name: 'Create new database view (Base)',
+        section: 'File',
+        defaultHotkeys: '',
+        callback: async () => {
+          const name = 'Untitled Database.base';
+          const initial = JSON.stringify(
+            {
+              title: 'Database View',
+              folder: '',
+              tagFilter: '',
+              columns: ['title', 'status', 'tags', 'priority'],
+              sortBy: 'title',
+              sortDesc: false,
+              groupBy: '',
+              filterText: '',
+            },
+            null,
+            2
+          );
+          await invoke('vault_write_file', { relativePath: name, content: initial });
+          await vault.refreshTree();
+          workspace.openNote(name, { newTab: true });
+        },
+      });
+
+      this.registerCommand({
+        id: 'composer:open',
+        name: 'Note composer: Merge or extract selection',
+        section: 'Editor',
+        defaultHotkeys: '',
+        callback: () => {
+          workspace.showComposerModal = true;
+        },
+      });
+
+      this.registerCommand({
+        id: 'app:open-random-note',
+        name: 'Open random note',
+        section: 'Navigation',
+        defaultHotkeys: '',
+        callback: () => {
+          openRandomNote();
+        },
+      });
+
+      this.registerCommand({
+        id: 'recovery:open',
+        name: 'File recovery: View snapshots',
+        section: 'File',
+        defaultHotkeys: '',
+        callback: () => {
+          workspace.showRecoveryModal = true;
+        },
+      });
+
+      this.registerCommand({
+        id: 'converter:md-to-wiki',
+        name: 'Format converter: Convert Markdown links to wikilinks',
+        section: 'Editor',
+        defaultHotkeys: '',
+        callback: async () => {
+          if (vault.activeFilePath && vault.activeFileContent) {
+            const converted = convertMarkdownLinksToWikilinks(vault.activeFileContent);
+            vault.activeFileContent = converted;
+            await invoke('vault_write_file', {
+              relativePath: vault.activeFilePath,
+              content: converted,
+            });
+          }
+        },
+      });
+
+      this.registerCommand({
+        id: 'converter:wiki-to-md',
+        name: 'Format converter: Convert wikilinks to Markdown links',
+        section: 'Editor',
+        defaultHotkeys: '',
+        callback: async () => {
+          if (vault.activeFilePath && vault.activeFileContent) {
+            const converted = convertWikilinksToMarkdownLinks(vault.activeFileContent);
+            vault.activeFileContent = converted;
+            await invoke('vault_write_file', {
+              relativePath: vault.activeFilePath,
+              content: converted,
+            });
+          }
+        },
+      });
+
+      this.registerCommand({
+        id: 'converter:html-to-md',
+        name: 'Format converter: Convert HTML tags to Markdown',
+        section: 'Editor',
+        defaultHotkeys: '',
+        callback: async () => {
+          if (vault.activeFilePath && vault.activeFileContent) {
+            const converted = convertHtmlFormattingToMarkdown(vault.activeFileContent);
+            vault.activeFileContent = converted;
+            await invoke('vault_write_file', {
+              relativePath: vault.activeFilePath,
+              content: converted,
+            });
+          }
+        },
+      });
+
+      this.registerCommand({
+        id: 'zk:create-unique-note',
+        name: 'Create Zettelkasten unique note',
+        section: 'File',
+        defaultHotkeys: '',
+        callback: async () => {
+          const title = prompt('Enter Zettelkasten note title:');
+          if (title !== null) {
+            await createZettelkastenNote(title);
+          }
+        },
+      });
+
+      this.registerCommand({
+        id: 'export:html',
+        name: 'Export active note to HTML',
+        section: 'File',
+        defaultHotkeys: '',
+        callback: async () => {
+          if (vault.activeFilePath && vault.activeFileContent) {
+            const outPath = await exportNoteToHtml(vault.activeFilePath, vault.activeFileContent);
+            alert(`Note exported to HTML: ${outPath}`);
+          }
+        },
+      });
+
+      this.registerCommand({
+        id: 'export:pdf',
+        name: 'Export active note to PDF (Print)',
+        section: 'File',
+        defaultHotkeys: '',
+        callback: () => {
+          if (vault.activeFilePath) {
+            const title = vault.activeFilePath.split('/').pop()?.replace(/\.md$/, '') || 'Note';
+            exportNoteToPdf(title);
           }
         },
       });

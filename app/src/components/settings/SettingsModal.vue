@@ -2,6 +2,8 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useSettingsStore } from '../../stores/settings';
 import { useCommandStore, eventToHotkeyString } from '../../stores/commands';
+import { usePluginsStore } from '../../stores/plugins';
+import { useWorkspaceStore } from '../../stores/workspace';
 import {
   X,
   FileCode,
@@ -16,12 +18,16 @@ import {
   AlertTriangle,
   Download,
   Trash2,
+  SlidersHorizontal,
 } from 'lucide-vue-next';
 
 const settings = useSettingsStore();
 const commandStore = useCommandStore();
+const pluginsStore = usePluginsStore();
+const workspace = useWorkspaceStore();
 
 const activeSection = ref<'editor' | 'files' | 'appearance' | 'hotkeys' | 'plugins' | 'about'>('editor');
+const expandedPlugin = ref<string | null>(null);
 
 const hotkeyFilter = ref('');
 const recordingCommandId = ref<string | null>(null);
@@ -580,20 +586,199 @@ const zoomPresets = [80, 90, 100, 110, 125, 150];
           <!-- 5. CORE PLUGINS SECTION -->
           <div v-else-if="activeSection === 'plugins'" class="space-y-3">
             <div
-              v-for="p in settings.plugins"
+              v-for="p in pluginsStore.plugins"
               :key="p.id"
-              class="flex items-center justify-between p-3 rounded border border-[var(--background-modifier-border)] bg-[var(--background-secondary)]"
+              class="rounded border border-[var(--background-modifier-border)] bg-[var(--background-secondary)] overflow-hidden transition-colors"
             >
-              <div>
-                <div class="font-medium text-sm text-[var(--text-normal)]">{{ p.name }}</div>
-                <div class="text-[var(--text-muted)] text-[11px]">{{ p.description }}</div>
+              <div class="flex items-center justify-between p-3">
+                <div class="flex-1 pr-3">
+                  <div class="font-medium text-sm text-[var(--text-normal)] flex items-center gap-2">
+                    {{ p.name }}
+                    <span
+                      v-if="p.hasSettings && p.enabled"
+                      class="text-[10px] px-1.5 py-0.5 rounded bg-[var(--background-primary)] text-[var(--text-muted)] border border-[var(--background-modifier-border)]"
+                    >
+                      Configurable
+                    </span>
+                  </div>
+                  <div class="text-[var(--text-muted)] text-[11px] mt-0.5">{{ p.description }}</div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <button
+                    v-if="p.hasSettings && p.enabled"
+                    @click="expandedPlugin = expandedPlugin === p.id ? null : p.id"
+                    class="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-border)] transition-colors"
+                    :class="{ 'text-[var(--interactive-accent)] bg-[var(--background-modifier-border)]': expandedPlugin === p.id }"
+                    title="Plugin settings"
+                  >
+                    <SlidersHorizontal class="w-4 h-4" />
+                  </button>
+                  <input
+                    type="checkbox"
+                    :checked="p.enabled"
+                    @change="pluginsStore.togglePlugin(p.id)"
+                    class="w-4 h-4 accent-[var(--interactive-accent)] cursor-pointer"
+                  />
+                </div>
               </div>
-              <input
-                type="checkbox"
-                :checked="p.enabled"
-                @change="settings.togglePlugin(p.id)"
-                class="w-4 h-4 accent-[var(--interactive-accent)]"
-              />
+
+              <!-- Collapsible Plugin Settings Panel -->
+              <div
+                v-if="p.hasSettings && p.enabled && expandedPlugin === p.id"
+                class="px-4 py-3 border-t border-[var(--background-modifier-border)] bg-[var(--background-primary)] space-y-3 text-xs"
+              >
+                <!-- Daily notes settings -->
+                <div v-if="p.id === 'daily-notes'" class="space-y-3">
+                  <div>
+                    <label class="block text-[var(--text-muted)] font-medium mb-1">New file location</label>
+                    <input
+                      v-model="pluginsStore.dailyNotes.folder"
+                      @change="pluginsStore.saveDailyNotesConfig()"
+                      type="text"
+                      placeholder="e.g. Daily or Journal (leave empty for vault root)"
+                      class="w-full bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-[var(--text-muted)] font-medium mb-1">Date format</label>
+                    <input
+                      v-model="pluginsStore.dailyNotes.format"
+                      @change="pluginsStore.saveDailyNotesConfig()"
+                      type="text"
+                      placeholder="YYYY-MM-DD"
+                      class="w-full bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                    />
+                    <div class="text-[10px] text-[var(--text-faint)] mt-1">Supports YYYY, MM, DD, dddd, etc.</div>
+                  </div>
+                  <div>
+                    <label class="block text-[var(--text-muted)] font-medium mb-1">Template file location</label>
+                    <input
+                      v-model="pluginsStore.dailyNotes.template"
+                      @change="pluginsStore.saveDailyNotesConfig()"
+                      type="text"
+                      placeholder="e.g. templates/daily.md"
+                      class="w-full bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                    />
+                  </div>
+                  <label class="flex items-center gap-2 pt-1 cursor-pointer">
+                    <input
+                      v-model="pluginsStore.dailyNotes.openOnStartup"
+                      @change="pluginsStore.saveDailyNotesConfig()"
+                      type="checkbox"
+                      class="w-3.5 h-3.5 accent-[var(--interactive-accent)]"
+                    />
+                    <span class="text-[var(--text-normal)]">Open daily note on startup</span>
+                  </label>
+                </div>
+
+                <!-- Templates settings -->
+                <div v-else-if="p.id === 'templates'" class="space-y-3">
+                  <div>
+                    <label class="block text-[var(--text-muted)] font-medium mb-1">Template folder location</label>
+                    <input
+                      v-model="pluginsStore.templates.folder"
+                      @change="pluginsStore.saveTemplatesConfig()"
+                      type="text"
+                      placeholder="templates"
+                      class="w-full bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                    />
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-[var(--text-muted)] font-medium mb-1">Date format</label>
+                      <input
+                        v-model="pluginsStore.templates.dateFormat"
+                        @change="pluginsStore.saveTemplatesConfig()"
+                        type="text"
+                        placeholder="YYYY-MM-DD"
+                        class="w-full bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-[var(--text-muted)] font-medium mb-1">Time format</label>
+                      <input
+                        v-model="pluginsStore.templates.timeFormat"
+                        @change="pluginsStore.saveTemplatesConfig()"
+                        type="text"
+                        placeholder="HH:mm"
+                        class="w-full bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                      />
+                    </div>
+                  </div>
+                  <div class="text-[10px] text-[var(--text-faint)]">
+                    Use <code v-pre class="text-[var(--text-accent)]">{{date}}</code>, <code v-pre class="text-[var(--text-accent)]">{{time}}</code>, or <code v-pre class="text-[var(--text-accent)]">{{title}}</code> in your template files.
+                  </div>
+                </div>
+
+                <!-- File recovery settings -->
+                <div v-else-if="p.id === 'file-recovery'" class="space-y-3">
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-[var(--text-muted)] font-medium mb-1">Snapshot interval (minutes)</label>
+                      <input
+                        v-model.number="pluginsStore.fileRecovery.intervalMinutes"
+                        type="number"
+                        min="1"
+                        max="60"
+                        class="w-full bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-[var(--text-muted)] font-medium mb-1">Retention (days)</label>
+                      <input
+                        v-model.number="pluginsStore.fileRecovery.historyDurationDays"
+                        type="number"
+                        min="1"
+                        max="365"
+                        class="w-full bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <button
+                      @click="workspace.showRecoveryModal = true; settings.showSettingsModal = false"
+                      class="px-3 py-1.5 rounded bg-[var(--background-modifier-border)] hover:bg-[var(--interactive-accent)] hover:text-white transition-colors text-xs font-medium text-[var(--text-normal)]"
+                    >
+                      View file recovery snapshots
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Zettelkasten prefixer settings -->
+                <div v-else-if="p.id === 'zk-prefixer'" class="space-y-3">
+                  <div>
+                    <label class="block text-[var(--text-muted)] font-medium mb-1">Prefix format</label>
+                    <input
+                      v-model="pluginsStore.zkPrefixer.format"
+                      @change="pluginsStore.saveZkPrefixerConfig()"
+                      type="text"
+                      placeholder="YYYYMMDDHHmm"
+                      class="w-full bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-[var(--text-muted)] font-medium mb-1">New file location</label>
+                    <input
+                      v-model="pluginsStore.zkPrefixer.folder"
+                      @change="pluginsStore.saveZkPrefixerConfig()"
+                      type="text"
+                      placeholder="e.g. zettelkasten (leave empty for vault root)"
+                      class="w-full bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-[var(--text-muted)] font-medium mb-1">Template file location</label>
+                    <input
+                      v-model="pluginsStore.zkPrefixer.template"
+                      @change="pluginsStore.saveZkPrefixerConfig()"
+                      type="text"
+                      placeholder="e.g. templates/zettel.md"
+                      class="w-full bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 

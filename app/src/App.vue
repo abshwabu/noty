@@ -4,6 +4,8 @@ import { useVaultStore } from './stores/vault';
 import { useWorkspaceStore } from './stores/workspace';
 import { useSettingsStore } from './stores/settings';
 import { useCommandStore } from './stores/commands';
+import { usePluginsStore } from './stores/plugins';
+import { useBookmarksStore } from './stores/bookmarks';
 import Ribbon from './components/Ribbon.vue';
 import Sidebar from './components/Sidebar.vue';
 import WorkspaceSplitView from './components/workspace/WorkspaceSplitView.vue';
@@ -16,19 +18,39 @@ import QuickSwitcherModal from './components/QuickSwitcherModal.vue';
 import HoverPreviewPopover from './components/HoverPreviewPopover.vue';
 import GraphViewModal from './components/GraphViewModal.vue';
 import GlobalReplaceModal from './components/GlobalReplaceModal.vue';
+import CalendarModal from './components/plugins/CalendarModal.vue';
+import TemplatesModal from './components/plugins/TemplatesModal.vue';
+import NoteComposerModal from './components/plugins/NoteComposerModal.vue';
+import FileRecoveryModal from './components/plugins/FileRecoveryModal.vue';
 import { X } from 'lucide-vue-next';
 
 const vault = useVaultStore();
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
 const commandStore = useCommandStore();
+const plugins = usePluginsStore();
+const bookmarks = useBookmarksStore();
 
 function handleKeydown(e: KeyboardEvent) {
   commandStore.handleGlobalKeydown(e);
 }
 
+function handleOpenCalendar() {
+  workspace.showCalendarModal = true;
+}
+
+function handleOpenTemplates() {
+  workspace.showTemplatesModal = true;
+}
+
 onMounted(async () => {
   window.addEventListener('keydown', handleKeydown);
+  window.addEventListener('noty:open-calendar-modal', handleOpenCalendar);
+  window.addEventListener('noty:open-templates-modal', handleOpenTemplates);
+
+  // Initialize plugins, vault, settings, bookmarks
+  await plugins.loadPluginsConfig();
+  await bookmarks.loadBookmarks();
 
   // Initialize command registry & load hotkeys
   commandStore.initCoreCommands();
@@ -47,6 +69,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown);
+  window.removeEventListener('noty:open-calendar-modal', handleOpenCalendar);
+  window.removeEventListener('noty:open-templates-modal', handleOpenTemplates);
 });
 </script>
 
@@ -75,6 +99,10 @@ onUnmounted(() => {
     <!-- Modals -->
     <GraphViewModal v-if="workspace.showGraphView" @close="workspace.showGraphView = false" />
     <GlobalReplaceModal v-if="workspace.showGlobalReplaceModal" @close="workspace.showGlobalReplaceModal = false" />
+    <CalendarModal v-if="workspace.showCalendarModal" @close="workspace.showCalendarModal = false" />
+    <TemplatesModal v-if="workspace.showTemplatesModal" @close="workspace.showTemplatesModal = false" />
+    <NoteComposerModal v-if="workspace.showComposerModal" @close="workspace.showComposerModal = false" />
+    <FileRecoveryModal v-if="workspace.showRecoveryModal" @close="workspace.showRecoveryModal = false" />
     <CommandPaletteModal v-if="commandStore.showCommandPalette" />
     <QuickSwitcherModal v-if="commandStore.showQuickSwitcher" />
     <VaultSwitcherModal v-if="vault.showVaultSwitcher" />

@@ -24,6 +24,8 @@ This document provides a comprehensive guide to all default keyboard shortcuts i
 | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> | Create note in new pane | `app:new-note-split` | Creates a new note and opens it in a side-by-side split pane |
 | <kbd>Ctrl</kbd> + <kbd>S</kbd> | Save active file | `app:save-file` | Forces immediate atomic write to the filesystem |
 | <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>D</kbd> | Open today's daily note | `app:daily-note` | Opens or creates `YYYY-MM-DD.md` in the vault root |
+| <kbd>Ctrl</kbd> + <kbd>T</kbd> | Insert template | `templates:insert` | Fuzzy picker to insert template with date/time variable expansion |
+| <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd> | Create new canvas | `canvas:new` | Creates a new JSON canvas visual whiteboard |
 | <kbd>F2</kbd> | Rename active file | `app:rename-file` | Prompts for a new note name and renames across the vault |
 
 ---

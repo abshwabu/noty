@@ -4,6 +4,8 @@ import { useWorkspaceStore } from '../../stores/workspace';
 import type { WorkspaceLeaf } from '../../types/workspace';
 import TabBar from './TabBar.vue';
 import NoteEditor from '../NoteEditor.vue';
+import CanvasView from '../canvas/CanvasView.vue';
+import BaseView from '../bases/BaseView.vue';
 
 const props = defineProps<{
   leaf: WorkspaceLeaf;
@@ -35,8 +37,18 @@ function handlePaneClick() {
 
     <!-- Pane Content View -->
     <div class="flex-1 overflow-hidden relative">
+      <CanvasView
+        v-if="activeTab && activeTab.path.endsWith('.canvas')"
+        :path="activeTab.path"
+        :leaf-id="leaf.id"
+      />
+      <BaseView
+        v-else-if="activeTab && (activeTab.path.endsWith('.base') || activeTab.path.endsWith('.base.json'))"
+        :path="activeTab.path"
+        :leaf-id="leaf.id"
+      />
       <NoteEditor
-        v-if="activeTab"
+        v-else-if="activeTab"
         :path="activeTab.path"
         :leaf-id="leaf.id"
       />

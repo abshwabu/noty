@@ -4,6 +4,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { useVaultStore } from '../stores/vault';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useSettingsStore } from '../stores/settings';
+import { usePluginsStore } from '../stores/plugins';
+import SlashCommandMenu, { type SlashItem } from './editor/SlashCommandMenu.vue';
+import { saveSnapshot } from '../services/recovery';
+import { formatDateCustom } from '../services/dailyNotes';
 import type { EditorViewMode } from '../types/workspace';
 import { Compartment, EditorState, StateEffect, StateField, RangeSetBuilder } from '@codemirror/state';
 import {
@@ -49,6 +53,16 @@ const props = defineProps<{
 const vault = useVaultStore();
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
+const plugins = usePluginsStore();
+
+const slashMenuState = ref({
+  show: false,
+  filter: '',
+  from: 0,
+  to: 0,
+  x: 0,
+  y: 0,
+});
 
 const activePath = computed(() => props.path || vault.activeFilePath || '');
 const noteContent = ref('');
@@ -343,6 +357,52 @@ async function loadFileContent() {
   }
 }
 
+function handleSlashSelect(item: SlashItem) {
+  if (!editorView) return;
+  const { from, to } = slashMenuState.value;
+
+  let insertText = '';
+  switch (item.id) {
+    case 'h1': insertText = '# '; break;
+    case 'h2': insertText = '## '; break;
+    case 'h3': insertText = '### '; break;
+    case 'bullet': insertText = '- '; break;
+    case 'number': insertText = '1. '; break;
+    case 'task': insertText = '- [ ] '; break;
+    case 'quote': insertText = '> '; break;
+    case 'callout': insertText = '> [!note]\n> '; break;
+    case 'code': insertText = '```\n\n```'; break;
+    case 'math': insertText = '$$\n\n$$'; break;
+    case 'table': insertText = '| Header 1 | Header 2 |\n|---|---|\n| Cell 1 | Cell 2 |\n'; break;
+    case 'hr': insertText = '---\n'; break;
+    case 'mermaid': insertText = '```mermaid\ngraph TD;\n  A-->B;\n```\n'; break;
+    case 'date': insertText = formatDateCustom(new Date(), 'YYYY-MM-DD'); break;
+    case 'time': insertText = formatDateCustom(new Date(), 'HH:mm'); break;
+    case 'template':
+      slashMenuState.value.show = false;
+      window.dispatchEvent(new CustomEvent('noty:open-templates-modal'));
+      return;
+  }
+
+  editorView.dispatch({
+    changes: { from, to, insert: insertText },
+    selection: { anchor: from + insertText.length },
+  });
+  slashMenuState.value.show = false;
+  editorView.focus();
+}
+
+function onInsertText(e: any) {
+  const text = e.detail?.text || '';
+  if (!editorView || !text) return;
+  const sel = editorView.state.selection.main;
+  editorView.dispatch({
+    changes: { from: sel.from, to: sel.to, insert: text },
+    selection: { anchor: sel.from + text.length },
+  });
+  editorView.focus();
+}
+
 async function saveFileContent(text?: string) {
   if (!activePath.value) return;
   const contentToSave = text !== undefined ? text : noteContent.value;
@@ -353,6 +413,11 @@ async function saveFileContent(text?: string) {
       content: contentToSave,
     });
     saveStatus.value = 'Saved';
+
+    // File recovery periodic snapshot
+    if (plugins.isEnabled('file-recovery') && activePath.value) {
+      saveSnapshot(activePath.value, contentToSave);
+    }
   } catch (err) {
     saveStatus.value = 'Unsaved changes';
   }
@@ -553,6 +618,32 @@ function initOrReconfigureCodeMirror() {
           if (showFindBar.value) {
             updateMatches();
           }
+
+          // Slash command trigger check
+          if (plugins.isEnabled('slash-commands')) {
+            const pos = update.state.selection.main.head;
+            const line = update.state.doc.lineAt(pos);
+            const textBefore = line.text.slice(0, pos - line.from);
+            const match = textBefore.match(/(?:^|\s)\/([a-zA-Z0-9_-]*)$/);
+
+            if (match) {
+              const coords = editorView?.coordsAtPos(pos);
+              if (coords) {
+                slashMenuState.value = {
+                  show: true,
+                  filter: match[1],
+                  from: line.from + textBefore.lastIndexOf('/'),
+                  to: pos,
+                  x: Math.min(window.innerWidth - 270, Math.max(10, coords.left)),
+                  y: coords.bottom,
+                };
+              }
+            } else {
+              slashMenuState.value.show = false;
+            }
+          } else {
+            slashMenuState.value.show = false;
+          }
         }
       }),
     ],
@@ -661,6 +752,7 @@ onMounted(() => {
   window.addEventListener('noty:toggle-task', onToggleTask);
   window.addEventListener('noty:indent-line', onIndentLine);
   window.addEventListener('noty:open-in-note-find', onOpenInNoteFind);
+  window.addEventListener('noty:insert-text', onInsertText);
   loadFileContent();
 });
 
@@ -669,6 +761,7 @@ onUnmounted(() => {
   window.removeEventListener('noty:toggle-task', onToggleTask);
   window.removeEventListener('noty:indent-line', onIndentLine);
   window.removeEventListener('noty:open-in-note-find', onOpenInNoteFind);
+  window.removeEventListener('noty:insert-text', onInsertText);
   if (activePath.value && editorView) {
     setCachedEditorState(activePath.value, editorView.state);
     editorView.destroy();
@@ -916,6 +1009,16 @@ onUnmounted(() => {
           @update:content="handleExternalContentUpdate"
         />
       </div>
+
+      <!-- Floating Slash Commands Menu -->
+      <SlashCommandMenu
+        v-if="slashMenuState.show"
+        :filter="slashMenuState.filter"
+        :x="slashMenuState.x"
+        :y="slashMenuState.y"
+        @select="handleSlashSelect"
+        @close="slashMenuState.show = false"
+      />
     </div>
 
     <!-- Image Attachment Viewer -->

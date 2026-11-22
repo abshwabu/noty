@@ -3,6 +3,9 @@ import { useWorkspaceStore } from '../stores/workspace';
 import { useVaultStore } from '../stores/vault';
 import { useSettingsStore } from '../stores/settings';
 import { useCommandStore } from '../stores/commands';
+import { usePluginsStore } from '../stores/plugins';
+import { openRandomNote } from '../services/randomNote';
+import { invoke } from '@tauri-apps/api/core';
 import {
   PanelLeft,
   FolderOpen,
@@ -13,12 +16,17 @@ import {
   Share2,
   Command as CommandIcon,
   Layers,
+  Calendar,
+  Dices,
+  LayoutGrid,
+  Table,
 } from 'lucide-vue-next';
 
 const workspace = useWorkspaceStore();
 const vault = useVaultStore();
 const settings = useSettingsStore();
 const commandStore = useCommandStore();
+const plugins = usePluginsStore();
 
 function handleNewNote() {
   const newName = 'Untitled Note';
@@ -27,6 +35,38 @@ function handleNewNote() {
       workspace.openNote(path, { newTab: true });
     }
   });
+}
+
+async function createNewCanvas() {
+  const name = 'Untitled Canvas.canvas';
+  const initial = JSON.stringify({ nodes: [], edges: [] }, null, 2);
+  await invoke('vault_write_file', { relativePath: name, content: initial });
+  await vault.refreshTree();
+  workspace.openNote(name, { newTab: true });
+}
+
+async function createNewBase() {
+  const name = 'Untitled Database.base';
+  const initial = JSON.stringify(
+    {
+      title: 'Database View',
+      folder: '',
+      tagFilter: '',
+      columns: ['title', 'status', 'tags', 'priority'],
+      sortBy: 'title',
+      sortDesc: false,
+      groupBy: '',
+      filterText: '',
+    },
+    null,
+    2
+  );
+  await invoke('vault_write_file', { relativePath: name, content: initial });
+  await vault.refreshTree();
+  workspace.openNote(name, { newTab: true });
+}
+function openCalendar() {
+  window.dispatchEvent(new CustomEvent('noty:open-calendar-modal'));
 }
 </script>
 
@@ -88,8 +128,49 @@ function handleNewNote() {
         <FilePlus class="w-4 h-4" />
       </button>
 
+      <!-- Daily Notes Calendar -->
+      <button
+        v-if="plugins.isEnabled('daily-notes')"
+        @click="openCalendar"
+        class="w-8 h-8 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)] transition-colors"
+        title="Open daily notes calendar"
+      >
+        <Calendar class="w-4 h-4 text-[var(--text-accent)]" />
+      </button>
+
+      <!-- New Canvas -->
+      <button
+        v-if="plugins.isEnabled('canvas')"
+        @click="createNewCanvas"
+        class="w-8 h-8 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)] transition-colors"
+        title="Create new canvas"
+      >
+        <LayoutGrid class="w-4 h-4 text-purple-400" />
+      </button>
+
+      <!-- New Base / Database View -->
+      <button
+        v-if="plugins.isEnabled('bases')"
+        @click="createNewBase"
+        class="w-8 h-8 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)] transition-colors"
+        title="Create new database view"
+      >
+        <Table class="w-4 h-4 text-amber-400" />
+      </button>
+
+      <!-- Random Note -->
+      <button
+        v-if="plugins.isEnabled('random-note')"
+        @click="openRandomNote"
+        class="w-8 h-8 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)] transition-colors"
+        title="Open random note"
+      >
+        <Dices class="w-4 h-4 text-emerald-400" />
+      </button>
+
       <!-- Graph View Icon -->
       <button
+        v-if="plugins.isEnabled('graph')"
         @click="workspace.showGraphView = true"
         class="w-8 h-8 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)] transition-colors"
         title="Open graph view (Ctrl+G)"

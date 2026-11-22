@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { useVaultStore } from '../stores/vault';
 import { useWorkspaceStore } from '../stores/workspace';
+import { usePluginsStore } from '../stores/plugins';
 import {
   PanelLeft,
   PanelRight,
@@ -10,6 +11,7 @@ import {
 
 const vault = useVaultStore();
 const workspace = useWorkspaceStore();
+const plugins = usePluginsStore();
 
 const activeTab = computed(() => workspace.activeTab);
 
@@ -43,7 +45,7 @@ const backlinkCount = computed(() => {
 
       <!-- Backlink count -->
       <div
-        v-if="activeTab"
+        v-if="activeTab && plugins.isEnabled('backlinks')"
         @click="workspace.layout.rightSidebar.activePanel = 'backlinks'; workspace.layout.rightSidebar.collapsed = false"
         class="flex items-center gap-1 hover:text-[var(--text-normal)] cursor-pointer transition-colors"
         title="View backlinks"
@@ -60,8 +62,8 @@ const backlinkCount = computed(() => {
 
     <!-- Right Section -->
     <div class="flex items-center gap-3">
-      <span v-if="activeTab">{{ wordCount }} words</span>
-      <span v-if="activeTab" class="hidden md:inline">{{ charCount }} characters</span>
+      <span v-if="activeTab && plugins.isEnabled('word-count')">{{ wordCount }} words</span>
+      <span v-if="activeTab && plugins.isEnabled('word-count')" class="hidden md:inline">{{ charCount }} characters</span>
 
       <!-- Mode indicator -->
       <button
