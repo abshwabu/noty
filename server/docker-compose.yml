@@ -1,0 +1,48 @@
+services:
+  sync-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: noty-sync-server
+    restart: unless-stopped
+    environment:
+      - PORT=8080
+      - DATA_DIR=/data
+    volumes:
+      - sync-data:/data
+    networks:
+      - noty-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: noty-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - noty-network
+    depends_on:
+      sync-server:
+        condition: service_healthy
+
+volumes:
+  sync-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  noty-network:
+    driver: bridge
