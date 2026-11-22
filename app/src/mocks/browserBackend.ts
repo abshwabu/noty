@@ -121,6 +121,8 @@ flowchart LR
     sort_by: 'name-asc',
   };
 
+  let mockLastSyncedAt = Math.floor(Date.now() / 1000) - 300;
+
   mockIPC((cmd, args: any) => {
     switch (cmd) {
       case 'vault_get_current':
@@ -583,6 +585,104 @@ flowchart LR
           files_modified: modified,
           occurrences_replaced: occurrences,
         };
+      }
+
+      case 'sync_get_config': {
+        return {
+          server_url: 'http://localhost:8080',
+          token: 'mock_token_dev_123',
+          device_id: 'dev_mock_001',
+          device_name: 'Desktop Mock',
+          vault_id: 'vlt_mock_work',
+          vault_name: 'Work Notes',
+          e2ee_passphrase: null,
+          auto_sync_minutes: 0,
+          auto_sync_on_open: false,
+          excluded_patterns: [],
+          last_synced_at: Math.floor(Date.now() / 1000) - 300,
+          last_cursor: 12,
+        };
+      }
+
+      case 'sync_save_config': {
+        return null;
+      }
+
+      case 'sync_login': {
+        return {
+          token: 'mock_bearer_token_' + Date.now(),
+          device: { id: 'dev_mock_' + Date.now(), name: args.deviceName || 'Browser Client' },
+          user: { id: 'usr_mock_1', username: args.username },
+        };
+      }
+
+      case 'sync_list_vaults': {
+        return [
+          { id: 'vlt_mock_work', name: 'Work Notes', version_retention_days: 30 },
+          { id: 'vlt_mock_personal', name: 'Personal Vault', version_retention_days: 14 },
+        ];
+      }
+
+      case 'sync_create_vault': {
+        return {
+          id: 'vlt_mock_' + Date.now(),
+          name: args.name,
+          version_retention_days: 30,
+        };
+      }
+
+      case 'sync_now': {
+        mockLastSyncedAt = Math.floor(Date.now() / 1000);
+        return {
+          pushed: 1,
+          pulled: 0,
+          merged: 0,
+          conflicts: 0,
+          deleted_local: 0,
+          deleted_remote: 0,
+          timestamp: mockLastSyncedAt,
+          error: null,
+        };
+      }
+
+      case 'sync_upload_vault':
+      case 'sync_download_vault': {
+        return {
+          pushed: 5,
+          pulled: 5,
+          merged: 0,
+          conflicts: 0,
+          deleted_local: 0,
+          deleted_remote: 0,
+          timestamp: Math.floor(Date.now() / 1000),
+          error: null,
+        };
+      }
+
+      case 'sync_get_status': {
+        return {
+          is_syncing: false,
+          last_synced_at: mockLastSyncedAt,
+          configured: true,
+          vault_name: 'Work Notes',
+          unresolved_conflicts_count: 0,
+        };
+      }
+
+      case 'sync_get_logs': {
+        const now = Math.floor(Date.now() / 1000);
+        return [
+          { id: 1, timestamp: now - 300, level: 'info', message: 'Sync cycle completed successfully', details: 'Pushed: 1, Pulled: 0' },
+          { id: 2, timestamp: now - 302, level: 'info', message: 'Starting sync cycle', details: 'Vault: Work Notes' },
+        ];
+      }
+
+      case 'sync_get_conflicts': {
+        return [];
+      }
+
+      case 'sync_resolve_conflict': {
+        return null;
       }
 
       default:

@@ -8,6 +8,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub mod db;
 pub mod search;
+pub mod sync;
 use db::{BacklinksResult, GraphData, HeadingItem, MetadataIndex, OutgoingLinkItem, TagCountItem};
 pub use search::{
     FileSearchResult, GlobalReplaceRequest, GlobalReplaceResult, ReplacePreviewItem,
@@ -126,6 +127,11 @@ impl VaultManager {
     pub fn get_current_vault_path(&self) -> Result<PathBuf, String> {
         let lock = self.current_vault.lock().map_err(|e| e.to_string())?;
         lock.clone().ok_or_else(|| "No vault currently open".to_string())
+    }
+
+    pub fn sync_engine(&self) -> Result<sync::SyncEngine, String> {
+        let vault_path = self.get_current_vault_path()?;
+        sync::SyncEngine::new(vault_path)
     }
 
     pub fn set_current_vault(&self, path: PathBuf) -> Result<VaultInfo, String> {

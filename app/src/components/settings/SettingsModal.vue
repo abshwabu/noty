@@ -4,6 +4,8 @@ import { useSettingsStore } from '../../stores/settings';
 import { useCommandStore, eventToHotkeyString } from '../../stores/commands';
 import { usePluginsStore } from '../../stores/plugins';
 import { useWorkspaceStore } from '../../stores/workspace';
+import { useSyncStore } from '../../stores/sync';
+import ConflictModal from '../sync/ConflictModal.vue';
 import {
   X,
   FileCode,
@@ -19,15 +21,98 @@ import {
   Download,
   Trash2,
   SlidersHorizontal,
+  Cloud,
+  Lock,
+  Upload,
+  Terminal,
+  Server,
+  ShieldCheck,
+  ExternalLink,
 } from 'lucide-vue-next';
 
 const settings = useSettingsStore();
 const commandStore = useCommandStore();
 const pluginsStore = usePluginsStore();
 const workspace = useWorkspaceStore();
+const syncStore = useSyncStore();
 
-const activeSection = ref<'editor' | 'files' | 'appearance' | 'hotkeys' | 'plugins' | 'about'>('editor');
+const activeSection = ref<'editor' | 'files' | 'appearance' | 'hotkeys' | 'plugins' | 'sync' | 'about'>('editor');
 const expandedPlugin = ref<string | null>(null);
+
+const loginUsername = ref('');
+const loginPassword = ref('');
+const loginDeviceName = ref('');
+const loginLoading = ref(false);
+const syncActionLoading = ref(false);
+const syncFeedback = ref<string | null>(null);
+const newVaultName = ref('');
+const showConflictModal = ref(false);
+
+async function handleLogin() {
+  if (!loginUsername.value || !loginPassword.value) return;
+  loginLoading.value = true;
+  syncFeedback.value = null;
+  try {
+    await syncStore.login(loginUsername.value, loginPassword.value, loginDeviceName.value);
+    syncFeedback.value = 'Logged in and device connected successfully!';
+  } catch (e: any) {
+    syncFeedback.value = `Login failed: ${e.message || e}`;
+  } finally {
+    loginLoading.value = false;
+  }
+}
+
+async function handleCreateRemoteVault() {
+  if (!newVaultName.value.trim()) return;
+  try {
+    await syncStore.createRemoteVault(newVaultName.value.trim());
+    newVaultName.value = '';
+    syncFeedback.value = 'New server vault created and selected!';
+  } catch (e: any) {
+    syncFeedback.value = `Failed to create vault: ${e.message || e}`;
+  }
+}
+
+async function handleManualSync() {
+  syncActionLoading.value = true;
+  syncFeedback.value = null;
+  try {
+    const res = await syncStore.syncNow();
+    syncFeedback.value = `Sync complete! Pushed: ${res.pushed}, Pulled: ${res.pulled}, Merged: ${res.merged}, Conflicts: ${res.conflicts}`;
+  } catch (e: any) {
+    syncFeedback.value = `Sync error: ${e.message || e}`;
+  } finally {
+    syncActionLoading.value = false;
+  }
+}
+
+async function handleUploadVault() {
+  if (!syncStore.config.vault_id) return;
+  syncActionLoading.value = true;
+  syncFeedback.value = null;
+  try {
+    const res = await syncStore.uploadVault(syncStore.config.vault_id);
+    syncFeedback.value = `Vault uploaded successfully! Pushed ${res.pushed} file(s).`;
+  } catch (e: any) {
+    syncFeedback.value = `Upload error: ${e.message || e}`;
+  } finally {
+    syncActionLoading.value = false;
+  }
+}
+
+async function handleDownloadVault() {
+  if (!syncStore.config.vault_id) return;
+  syncActionLoading.value = true;
+  syncFeedback.value = null;
+  try {
+    const res = await syncStore.downloadVault(syncStore.config.vault_id);
+    syncFeedback.value = `Vault downloaded successfully! Pulled ${res.pulled} file(s).`;
+  } catch (e: any) {
+    syncFeedback.value = `Download error: ${e.message || e}`;
+  } finally {
+    syncActionLoading.value = false;
+  }
+}
 
 const hotkeyFilter = ref('');
 const recordingCommandId = ref<string | null>(null);
@@ -155,6 +240,15 @@ const zoomPresets = [80, 90, 100, 110, 125, 150];
             >
               <Puzzle class="w-4 h-4 shrink-0" />
               <span>Core plugins</span>
+            </button>
+
+            <button
+              @click="activeSection = 'sync'"
+              class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded transition-colors text-left"
+              :class="activeSection === 'sync' ? 'bg-[var(--interactive-accent)] text-white font-medium' : 'text-[var(--text-muted)] hover:text-[var(--text-normal)] hover:bg-[var(--background-modifier-hover)]'"
+            >
+              <Cloud class="w-4 h-4 shrink-0" />
+              <span>Sync</span>
             </button>
 
             <button
@@ -782,7 +876,312 @@ const zoomPresets = [80, 90, 100, 110, 125, 150];
             </div>
           </div>
 
-          <!-- 6. ABOUT SECTION -->
+          <!-- 6. SYNC SECTION -->
+          <div v-else-if="activeSection === 'sync'" class="space-y-6">
+            <!-- Sync Feedback Banner -->
+            <div
+              v-if="syncFeedback"
+              class="p-3 rounded bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] text-xs flex items-center justify-between"
+            >
+              <span :class="syncFeedback.includes('error') || syncFeedback.includes('failed') ? 'text-rose-400' : 'text-emerald-400'">
+                {{ syncFeedback }}
+              </span>
+              <button @click="syncFeedback = null" class="text-[var(--text-muted)] hover:text-[var(--text-normal)]">
+                <X class="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <!-- Active Conflict Warning Banner -->
+            <div
+              v-if="syncStore.status.unresolved_conflicts_count > 0"
+              class="p-3 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-between text-xs text-amber-300"
+            >
+              <div class="flex items-center gap-2">
+                <AlertTriangle class="w-4 h-4 text-amber-400 shrink-0" />
+                <span>You have <strong>{{ syncStore.status.unresolved_conflicts_count }} unresolved sync conflict(s)</strong>.</span>
+              </div>
+              <button
+                @click="showConflictModal = true"
+                class="px-2.5 py-1 rounded bg-amber-500 text-black font-semibold text-xs hover:bg-amber-400 transition-colors"
+              >
+                Resolve Conflicts
+              </button>
+            </div>
+
+            <!-- Sync Controls & Status -->
+            <div class="p-4 rounded-lg bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] space-y-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h3 class="font-semibold text-sm flex items-center gap-2 text-[var(--text-normal)]">
+                    <Cloud class="w-4 h-4 text-[var(--text-accent)]" />
+                    <span>Sync Status</span>
+                  </h3>
+                  <div class="text-[var(--text-muted)] text-[11px] mt-0.5">
+                    Last synced: <span class="text-[var(--text-normal)] font-medium">{{ syncStore.lastSyncRelativeTime }}</span>
+                    <span v-if="syncStore.config.vault_name" class="ml-2 font-mono text-[var(--text-accent)]">({{ syncStore.config.vault_name }})</span>
+                  </div>
+                </div>
+
+                <!-- Sync Now Button -->
+                <button
+                  @click="handleManualSync"
+                  :disabled="syncStore.isSyncing || !syncStore.isConfigured"
+                  class="flex items-center gap-1.5 px-4 py-2 rounded bg-[var(--interactive-accent)] hover:bg-[var(--interactive-accent-hover)] disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium transition-colors text-xs shadow"
+                >
+                  <RefreshCw :class="['w-3.5 h-3.5', syncStore.isSyncing ? 'animate-spin' : '']" />
+                  <span>{{ syncStore.isSyncing ? 'Syncing...' : 'Sync Now' }}</span>
+                </button>
+              </div>
+
+              <!-- Initial Setup Buttons -->
+              <div v-if="syncStore.isConfigured" class="pt-3 border-t border-[var(--background-modifier-border)] grid grid-cols-2 gap-3">
+                <button
+                  @click="handleUploadVault"
+                  :disabled="syncActionLoading || syncStore.isSyncing"
+                  class="flex items-center justify-center gap-2 px-3 py-2 rounded bg-[var(--background-primary)] border border-[var(--background-modifier-border)] hover:border-[var(--interactive-accent)] text-[var(--text-normal)] transition-colors text-xs font-medium"
+                  title="Upload all local notes to this server vault"
+                >
+                  <Upload class="w-3.5 h-3.5 text-[var(--text-accent)]" />
+                  <span>Upload this vault to server</span>
+                </button>
+                <button
+                  @click="handleDownloadVault"
+                  :disabled="syncActionLoading || syncStore.isSyncing"
+                  class="flex items-center justify-center gap-2 px-3 py-2 rounded bg-[var(--background-primary)] border border-[var(--background-modifier-border)] hover:border-[var(--interactive-accent)] text-[var(--text-normal)] transition-colors text-xs font-medium"
+                  title="Download all notes from this server vault"
+                >
+                  <Download class="w-3.5 h-3.5 text-[var(--text-accent)]" />
+                  <span>Download vault from server</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Server Connection & Account -->
+            <div class="p-4 rounded-lg bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] space-y-3">
+              <h3 class="font-semibold text-sm flex items-center gap-2 text-[var(--text-normal)]">
+                <Server class="w-4 h-4 text-blue-400" />
+                <span>Server & Account</span>
+              </h3>
+
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-[var(--text-muted)] text-[11px] mb-1 font-medium">Server URL</label>
+                  <input
+                    v-model="syncStore.config.server_url"
+                    @change="syncStore.saveConfig()"
+                    type="text"
+                    placeholder="https://sync.example.com"
+                    class="w-full bg-[var(--background-primary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                  />
+                </div>
+                <div>
+                  <label class="block text-[var(--text-muted)] text-[11px] mb-1 font-medium">Device Name</label>
+                  <input
+                    v-model="syncStore.config.device_name"
+                    @change="syncStore.saveConfig()"
+                    type="text"
+                    placeholder="e.g. Work MacBook, Pixel 8"
+                    class="w-full bg-[var(--background-primary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                  />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label class="block text-[var(--text-muted)] text-[11px] mb-1 font-medium">Username</label>
+                  <input
+                    v-model="loginUsername"
+                    type="text"
+                    placeholder="Username"
+                    class="w-full bg-[var(--background-primary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                  />
+                </div>
+                <div>
+                  <label class="block text-[var(--text-muted)] text-[11px] mb-1 font-medium">Password</label>
+                  <input
+                    v-model="loginPassword"
+                    type="password"
+                    placeholder="Password"
+                    class="w-full bg-[var(--background-primary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                  />
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between pt-2">
+                <span class="text-[11px] text-[var(--text-muted)]">
+                  Status: <span :class="syncStore.config.token ? 'text-emerald-400 font-medium' : 'text-amber-400'">
+                    {{ syncStore.config.token ? `Connected (${syncStore.config.device_name})` : 'Not Connected' }}
+                  </span>
+                </span>
+                <button
+                  @click="handleLogin"
+                  :disabled="loginLoading || !loginUsername || !loginPassword"
+                  class="px-3 py-1.5 rounded bg-[var(--interactive-accent)] hover:bg-[var(--interactive-accent-hover)] disabled:opacity-40 text-white font-medium text-xs transition-colors"
+                >
+                  {{ loginLoading ? 'Connecting...' : syncStore.config.token ? 'Re-authenticate' : 'Log In & Connect' }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Vault Selection -->
+            <div v-if="syncStore.config.token" class="p-4 rounded-lg bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] space-y-3">
+              <h3 class="font-semibold text-sm flex items-center gap-2 text-[var(--text-normal)]">
+                <FolderOpen class="w-4 h-4 text-amber-400" />
+                <span>Remote Vault</span>
+              </h3>
+
+              <div v-if="syncStore.remoteVaults.length > 0" class="space-y-2">
+                <label class="block text-[var(--text-muted)] text-[11px]">Select server vault to sync with:</label>
+                <select
+                  v-model="syncStore.config.vault_id"
+                  @change="() => {
+                    const sel = syncStore.remoteVaults.find(v => v.id === syncStore.config.vault_id);
+                    if (sel) syncStore.config.vault_name = sel.name;
+                    syncStore.saveConfig();
+                  }"
+                  class="w-full bg-[var(--background-primary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                >
+                  <option v-for="v in syncStore.remoteVaults" :key="v.id" :value="v.id">
+                    {{ v.name }} (ID: {{ v.id }})
+                  </option>
+                </select>
+              </div>
+
+              <div class="pt-2 flex items-center gap-2">
+                <input
+                  v-model="newVaultName"
+                  type="text"
+                  placeholder="Or create new server vault..."
+                  class="flex-1 bg-[var(--background-primary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                />
+                <button
+                  @click="handleCreateRemoteVault"
+                  :disabled="!newVaultName.trim()"
+                  class="px-3 py-1.5 rounded bg-[var(--background-modifier-border)] hover:bg-[var(--interactive-accent)] hover:text-white disabled:opacity-40 transition-colors text-xs font-medium"
+                >
+                  Create
+                </button>
+              </div>
+            </div>
+
+            <!-- End-to-End Encryption (E2EE) -->
+            <div class="p-4 rounded-lg bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] space-y-3">
+              <h3 class="font-semibold text-sm flex items-center gap-2 text-[var(--text-normal)]">
+                <Lock class="w-4 h-4 text-emerald-400" />
+                <span>End-to-End Encryption (E2EE)</span>
+              </h3>
+              <p class="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                When an encryption passphrase is set, all notes and media blobs are encrypted locally with <strong class="text-[var(--text-normal)]">XChaCha20-Poly1305</strong> before being sent to the server. The server stores only ciphertext and cannot read your data.
+              </p>
+              <div>
+                <label class="block text-[var(--text-muted)] text-[11px] mb-1 font-medium">Vault Encryption Passphrase (Optional)</label>
+                <input
+                  v-model="syncStore.config.e2ee_passphrase"
+                  @change="syncStore.saveConfig()"
+                  type="password"
+                  placeholder="Leave empty for standard server storage"
+                  class="w-full bg-[var(--background-primary)] border border-[var(--background-modifier-border)] rounded px-2.5 py-1.5 text-xs text-[var(--text-normal)] focus:outline-none focus:border-[var(--interactive-accent)]"
+                />
+              </div>
+            </div>
+
+            <!-- Automation & Schedule Settings -->
+            <div class="p-4 rounded-lg bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] space-y-3">
+              <h3 class="font-semibold text-sm flex items-center gap-2 text-[var(--text-normal)]">
+                <SlidersHorizontal class="w-4 h-4 text-purple-400" />
+                <span>Sync Schedule</span>
+              </h3>
+
+              <div class="flex items-center justify-between py-2 border-b border-[var(--background-modifier-border)]">
+                <div>
+                  <div class="font-medium">Auto-sync frequency</div>
+                  <div class="text-[var(--text-muted)] text-[11px]">Sync automatically in the background (0 = manual only).</div>
+                </div>
+                <div class="flex items-center gap-2">
+                  <input
+                    v-model.number="syncStore.config.auto_sync_minutes"
+                    @change="syncStore.saveConfig()"
+                    type="number"
+                    min="0"
+                    max="1440"
+                    class="w-20 bg-[var(--background-primary)] border border-[var(--background-modifier-border)] rounded px-2 py-1 text-xs text-center outline-none"
+                  />
+                  <span class="text-[11px] text-[var(--text-muted)]">minutes</span>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between py-2">
+                <div>
+                  <div class="font-medium">Sync on application open</div>
+                  <div class="text-[var(--text-muted)] text-[11px]">Automatically check and pull changes when Noty launches.</div>
+                </div>
+                <input
+                  v-model="syncStore.config.auto_sync_on_open"
+                  @change="syncStore.saveConfig()"
+                  type="checkbox"
+                  class="w-4 h-4 accent-[var(--interactive-accent)] rounded"
+                />
+              </div>
+            </div>
+
+            <!-- Selective Sync Details -->
+            <div class="p-4 rounded-lg bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] space-y-2">
+              <h3 class="font-semibold text-sm flex items-center gap-2 text-[var(--text-normal)]">
+                <ShieldCheck class="w-4 h-4 text-cyan-400" />
+                <span>Selective Sync & Exclusions</span>
+              </h3>
+              <p class="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                By default, internal metadata and local workspace settings (<code class="text-[var(--text-accent)]">workspace.json</code>, <code class="text-[var(--text-accent)]">appearance.json</code>, <code class="text-[var(--text-accent)]">.git/</code>, <code class="text-[var(--text-accent)]">.trash/</code>) are kept device-local and ignored by the sync engine.
+              </p>
+            </div>
+
+            <!-- Live Sync Activity Logs -->
+            <div class="p-4 rounded-lg bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] space-y-2">
+              <div class="flex items-center justify-between">
+                <h3 class="font-semibold text-sm flex items-center gap-2 text-[var(--text-normal)]">
+                  <Terminal class="w-4 h-4 text-emerald-400" />
+                  <span>Sync Activity Log</span>
+                </h3>
+                <button
+                  @click="syncStore.fetchLogs()"
+                  class="text-[11px] text-[var(--text-accent)] hover:underline flex items-center gap-1"
+                >
+                  <RefreshCw class="w-3 h-3" />
+                  <span>Refresh</span>
+                </button>
+              </div>
+
+              <div class="h-44 bg-[var(--background-primary)] rounded border border-[var(--background-modifier-border)] p-2.5 font-mono text-[11px] overflow-y-auto space-y-1">
+                <div v-if="syncStore.logs.length === 0" class="text-[var(--text-faint)] italic">
+                  No sync logs recorded yet.
+                </div>
+                <div
+                  v-for="log in syncStore.logs"
+                  :key="log.id"
+                  class="flex items-start gap-2 leading-relaxed"
+                >
+                  <span class="text-[var(--text-faint)] shrink-0">
+                    {{ new Date(log.timestamp * 1000).toLocaleTimeString() }}
+                  </span>
+                  <span
+                    :class="[
+                      'uppercase text-[9px] font-bold px-1 rounded shrink-0',
+                      log.level === 'error' ? 'bg-rose-500/20 text-rose-400' : log.level === 'warn' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'
+                    ]"
+                  >
+                    {{ log.level }}
+                  </span>
+                  <span class="text-[var(--text-normal)] flex-1">{{ log.message }}</span>
+                  <span v-if="log.details" class="text-[var(--text-muted)] truncate max-w-xs">{{ log.details }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Conflict Resolution Modal -->
+          <ConflictModal v-if="showConflictModal" @close="showConflictModal = false" />
+
+          <!-- 7. ABOUT SECTION -->
           <div v-else-if="activeSection === 'about'" class="space-y-4">
             <div class="p-4 rounded-lg bg-[var(--background-secondary)] border border-[var(--background-modifier-border)] flex items-center gap-4">
               <div class="w-12 h-12 rounded-xl bg-[var(--interactive-accent)]/20 text-[var(--text-accent)] flex items-center justify-center font-bold text-lg">

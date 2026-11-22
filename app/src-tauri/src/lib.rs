@@ -65,6 +65,18 @@ pub fn run() {
             commands::vault_search,
             commands::vault_preview_global_replace,
             commands::vault_execute_global_replace,
+            commands::sync_get_config,
+            commands::sync_save_config,
+            commands::sync_login,
+            commands::sync_list_vaults,
+            commands::sync_create_vault,
+            commands::sync_now,
+            commands::sync_upload_vault,
+            commands::sync_download_vault,
+            commands::sync_get_status,
+            commands::sync_get_logs,
+            commands::sync_get_conflicts,
+            commands::sync_resolve_conflict,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

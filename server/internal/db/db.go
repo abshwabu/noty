@@ -335,7 +335,7 @@ func (d *DB) GetManifestSince(vaultID string, sinceCursor int64, limit int) (*mo
 		}
 		defer rows.Close()
 
-		var items []models.ManifestItem
+		items := make([]models.ManifestItem, 0)
 		for rows.Next() {
 			var it models.ManifestItem
 			it.VaultID = vaultID
@@ -368,7 +368,7 @@ func (d *DB) GetManifestSince(vaultID string, sinceCursor int64, limit int) (*mo
 	}
 	defer rows.Close()
 
-	var items []models.ManifestItem
+	items := make([]models.ManifestItem, 0)
 	currentCursor := sinceCursor
 	for rows.Next() {
 		var cur int64

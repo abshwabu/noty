@@ -1,4 +1,7 @@
 use crate::vault::db::{BacklinksResult, GraphData, HeadingItem, OutgoingLinkItem, TagCountItem};
+use crate::vault::sync::client::{LoginResponse, RemoteVault, SyncClient};
+use crate::vault::sync::state::{SyncConfig, SyncConflict, SyncLog};
+use crate::vault::sync::SyncSummary;
 use crate::vault::{
     FileNode, GlobalReplaceRequest, GlobalReplaceResult, RecentVault, ReplacePreviewItem,
     SearchOptions, SearchResponse, TrashItem, VaultInfo, VaultManager,
@@ -367,4 +370,105 @@ pub async fn vault_execute_global_replace(
     state: State<'_, AppState>,
 ) -> Result<GlobalReplaceResult, String> {
     state.vault_manager.execute_global_replace(&request)
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct SyncStatusResponse {
+    pub is_syncing: bool,
+    pub last_synced_at: Option<i64>,
+    pub configured: bool,
+    pub vault_name: String,
+    pub unresolved_conflicts_count: usize,
+}
+
+#[tauri::command]
+pub async fn sync_get_config(state: State<'_, AppState>) -> Result<SyncConfig, String> {
+    let engine = state.vault_manager.sync_engine()?;
+    engine.state().get_config()
+}
+
+#[tauri::command]
+pub async fn sync_save_config(config: SyncConfig, state: State<'_, AppState>) -> Result<(), String> {
+    let engine = state.vault_manager.sync_engine()?;
+    engine.state().save_config(&config)
+}
+
+#[tauri::command]
+pub async fn sync_login(
+    server_url: String,
+    username: String,
+    password: String,
+    device_name: String,
+) -> Result<LoginResponse, String> {
+    SyncClient::login(&server_url, &username, &password, &device_name)
+}
+
+#[tauri::command]
+pub async fn sync_list_vaults(server_url: String, token: String) -> Result<Vec<RemoteVault>, String> {
+    let client = SyncClient::new(server_url, token);
+    client.list_vaults()
+}
+
+#[tauri::command]
+pub async fn sync_create_vault(
+    server_url: String,
+    token: String,
+    name: String,
+) -> Result<RemoteVault, String> {
+    let client = SyncClient::new(server_url, token);
+    client.create_vault(&name)
+}
+
+#[tauri::command]
+pub async fn sync_now(state: State<'_, AppState>) -> Result<SyncSummary, String> {
+    let engine = state.vault_manager.sync_engine()?;
+    engine.sync()
+}
+
+#[tauri::command]
+pub async fn sync_upload_vault(vault_id: String, state: State<'_, AppState>) -> Result<SyncSummary, String> {
+    let engine = state.vault_manager.sync_engine()?;
+    engine.upload_vault(&vault_id)
+}
+
+#[tauri::command]
+pub async fn sync_download_vault(vault_id: String, state: State<'_, AppState>) -> Result<SyncSummary, String> {
+    let engine = state.vault_manager.sync_engine()?;
+    engine.download_vault(&vault_id)
+}
+
+#[tauri::command]
+pub async fn sync_get_status(state: State<'_, AppState>) -> Result<SyncStatusResponse, String> {
+    let engine = state.vault_manager.sync_engine()?;
+    let config = engine.state().get_config()?;
+    let conflicts = engine.state().get_unresolved_conflicts()?;
+    Ok(SyncStatusResponse {
+        is_syncing: false,
+        last_synced_at: config.last_synced_at,
+        configured: !config.token.is_empty() && !config.vault_id.is_empty(),
+        vault_name: config.vault_name,
+        unresolved_conflicts_count: conflicts.len(),
+    })
+}
+
+#[tauri::command]
+pub async fn sync_get_logs(limit: Option<usize>, state: State<'_, AppState>) -> Result<Vec<SyncLog>, String> {
+    let engine = state.vault_manager.sync_engine()?;
+    engine.state().get_recent_logs(limit.unwrap_or(50))
+}
+
+#[tauri::command]
+pub async fn sync_get_conflicts(state: State<'_, AppState>) -> Result<Vec<SyncConflict>, String> {
+    let engine = state.vault_manager.sync_engine()?;
+    engine.state().get_unresolved_conflicts()
+}
+
+#[tauri::command]
+pub async fn sync_resolve_conflict(
+    conflict_id: i64,
+    resolution: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let engine = state.vault_manager.sync_engine()?;
+    engine.resolve_conflict(conflict_id, &resolution)
 }
